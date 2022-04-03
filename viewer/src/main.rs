@@ -21,6 +21,7 @@ fn setup_scene(
 
     // mesh
     let mesh = build_mesh();
+    let bbox = mesh.compute_aabb().unwrap();
     commands.spawn_bundle(PbrBundle {
         mesh: meshes.add(mesh),
         material: materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
@@ -28,13 +29,15 @@ fn setup_scene(
     });
 
     // light
+    let light = bbox.center + bbox.half_extents * Vec3::new(4.0, 8.0, 4.0);
     commands.spawn_bundle(PointLightBundle {
-        transform: Transform::from_xyz(4.0, 8.0, 4.0),
+        transform: Transform::from_translation(light),
         ..Default::default()
     });
     // camera
+    let cam = bbox.center + bbox.half_extents * Vec3::new(-3.0, 3.0, 5.0);
     commands.spawn_bundle(PerspectiveCameraBundle {
-        transform: Transform::from_xyz(-3.0, 3.0, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
+        transform: Transform::from_translation(cam).looking_at(bbox.center, Vec3::Y),
         ..Default::default()
     });
 }
