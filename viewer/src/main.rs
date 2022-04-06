@@ -48,6 +48,8 @@ fn build_mesh(laz_file: &str) -> Mesh {
         .points()
         .map(|wrapped_point| {
             let point = wrapped_point.unwrap();
+            // dbg!(&point);
+            println!("Point coordinates: ({}, {}, {})", point.x, point.y, point.z);
             if let Some(color) = point.color {
                 println!(
                     "Point color: red={}, green={}, blue={}",
