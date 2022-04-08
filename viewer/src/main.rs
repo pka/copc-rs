@@ -77,13 +77,10 @@ struct Quads {
 
 fn setup(mut commands: Commands) {
     let quads = read_laz("../tests/data/autzen.laz");
-    let bbox = &quads.bbox;
-    let cam = bbox.center + bbox.half_extents * 3.0;
-    dbg!(&cam);
     commands
         .spawn_bundle(PerspectiveCameraBundle {
-            transform: Transform::from_translation(cam.into())
-                .looking_at(bbox.center.into(), Vec3::Y),
+            transform: Transform::from_translation(Vec3::new(30.0, 30.0, 30.0))
+                .looking_at(Vec3::ZERO, Vec3::Y),
             ..default()
         })
         .insert(CameraController::default());
@@ -96,25 +93,13 @@ fn read_laz(laz_file: &str) -> Quads {
     let mut quads = Quads::default();
     let mut bboxmin = Vec3::new(f32::MAX, f32::MAX, f32::MAX);
     let mut bboxmax = Vec3::new(f32::MIN, f32::MIN, f32::MIN);
-    // Scale points to -10.0 .. 10.0
-    let offset = Vec3::new(637240.5, 472.09503, 851170.1);
-    let half_extents = Vec3::new(1624.1563, 64.74501, 2192.2813);
 
     reader.points().for_each(|wrapped_point| {
         let point = wrapped_point.unwrap();
         // dbg!(&point);
-        // let center = Vec3::new(point.x as f32, point.z as f32, point.y as f32);
-        let center = Vec3::new(
-            (point.x as f32 - offset.x) / half_extents.x * 10.0,
-            (point.z as f32 - offset.y) / half_extents.y * 10.0,
-            (point.y as f32 - offset.z) / half_extents.z * 10.0,
-        );
+        let center = Vec3::new(point.x as f32, point.z as f32, point.y as f32);
         bboxmin = bboxmin.min(center);
         bboxmax = bboxmax.max(center);
-        println!(
-            "Point coordinates: ({}, {}, {}) -> {center}",
-            point.x, point.y, point.z
-        );
         let color = point
             .color
             .map(|col| {
@@ -134,7 +119,6 @@ fn read_laz(laz_file: &str) -> Quads {
     });
 
     quads.bbox = Aabb::from_min_max(bboxmin, bboxmax);
-    dbg!(&quads.bbox, &bboxmin, &bboxmax);
     quads
 }
 
@@ -180,6 +164,22 @@ impl From<&Quad> for GpuQuad {
     }
 }
 
+impl GpuQuad {
+    fn normalized(quad: &Quad, offset: Vec3, scale: f32) -> Self {
+        let center = Vec3::new(
+            (quad.center.x - offset.x) * scale,
+            (quad.center.y - offset.y) * scale,
+            (quad.center.z - offset.z) * scale,
+        )
+        .extend(1.0);
+        Self {
+            center,
+            half_extents: quad.half_extents.extend(0.0),
+            color: quad.color.as_rgba_f32(),
+        }
+    }
+}
+
 #[derive(Component)]
 struct GpuQuads {
     index_buffer: Option<Buffer>,
@@ -212,8 +212,19 @@ fn prepare_quads(
         if quads.extracted {
             continue;
         }
+        // Scale points to -10.0 .. 10.0
+        let offset = quads.bbox.center;
+        let scale = 10.0
+            / quads
+                .bbox
+                .half_extents
+                .x
+                .max(quads.bbox.half_extents.y)
+                .max(quads.bbox.half_extents.z);
         for quad in quads.data.iter() {
-            gpu_quads.instances.push(GpuQuad::from(quad));
+            gpu_quads
+                .instances
+                .push(GpuQuad::normalized(quad, offset.into(), scale));
         }
         gpu_quads.index_count = gpu_quads.instances.len() as u32 * 6;
         let mut indices = Vec::with_capacity(gpu_quads.index_count as usize);

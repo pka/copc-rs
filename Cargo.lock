@@ -216,8 +216,6 @@ dependencies = [
  "bevy_ecs",
  "bevy_reflect",
  "bevy_utils",
- "ron",
- "serde",
  "wasm-bindgen",
  "web-sys",
 ]
