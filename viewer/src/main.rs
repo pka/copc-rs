@@ -76,7 +76,10 @@ struct Quads {
 }
 
 fn setup(mut commands: Commands) {
-    let quads = read_laz("../tests/data/autzen.laz");
+    let laz = std::env::args()
+        .nth(1)
+        .unwrap_or("../tests/data/autzen.laz".to_string());
+    let quads = read_laz(&laz);
     commands
         .spawn_bundle(PerspectiveCameraBundle {
             transform: Transform::from_translation(Vec3::new(30.0, 30.0, 30.0))
@@ -219,8 +222,9 @@ fn prepare_quads(
                 .bbox
                 .half_extents
                 .x
-                .max(quads.bbox.half_extents.y)
-                .max(quads.bbox.half_extents.z);
+                .abs()
+                .max(quads.bbox.half_extents.y.abs())
+                .max(quads.bbox.half_extents.z.abs());
         for quad in quads.data.iter() {
             gpu_quads
                 .instances
