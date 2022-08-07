@@ -1,4 +1,6 @@
-use laz::las::file::read_header_and_vlrs;
+mod file;
+
+use crate::file::read_header_and_vlrs;
 use laz::laszip::LasZipDecompressor;
 use std::fs::File;
 use std::io::BufReader;

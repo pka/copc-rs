@@ -976,6 +976,7 @@ dependencies = [
 name = "copc-rs"
 version = "0.1.0"
 dependencies = [
+ "byteorder",
  "las",
  "laz",
 ]
