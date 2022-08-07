@@ -1,17 +1,25 @@
+mod copc;
 mod file;
 mod header;
 
-use crate::file::read_header_and_vlrs;
+use crate::file::CopcHeaders;
 use laz::laszip::LasZipDecompressor;
+use std::env;
 use std::fs::File;
 use std::io::{BufReader, Seek, SeekFrom};
 
 fn main() -> laz::Result<()> {
-    let lazfn = "tests/data/autzen.laz";
-    let (laz_header, laz_vlr) = read_header_and_vlrs(lazfn)?;
-
+    let lazfn = env::args()
+        .nth(1)
+        .unwrap_or("tests/data/autzen.laz".to_string());
     let mut laz_file = BufReader::new(File::open(lazfn)?);
-    let laz_vlr = laz_vlr.expect("Expected a laszip VLR for laz file");
+
+    let copc_headers = CopcHeaders::read_from(&mut laz_file)?;
+    let laz_header = copc_headers.las_header;
+    let laz_vlr = copc_headers
+        .laszip_vlr
+        .expect("Expected a laszip VLR for laz file");
+
     laz_file.seek(SeekFrom::Start(laz_header.offset_to_point_data as u64))?;
 
     let num_points_per_iter = 100;
@@ -33,7 +41,7 @@ fn main() -> laz::Result<()> {
                 las::raw::Point::read_from(point_data, &las::point::Format::new(10).unwrap())
                     .unwrap();
             let point = las::point::Point::new(raw_point, &Default::default());
-            println!("Point coordinates: ({}, {}, {})", point.x, point.y, point.z);
+            // println!("Point coordinates: ({}, {}, {})", point.x, point.y, point.z);
         }
 
         num_points_left -= num_points_to_read;

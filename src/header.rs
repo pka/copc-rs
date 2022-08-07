@@ -252,7 +252,7 @@ impl Header {
     /// let mut file = File::open("tests/data/autzen.las").unwrap();
     /// let header = Header::read_from(&mut file).unwrap();
     /// ```
-    pub fn read_from<R: Read>(mut read: R) -> Result<Header> {
+    pub fn read_from<R: Read>(read: &mut R) -> Result<Header> {
         use las::header::Error;
 
         let mut header = Header::default();
@@ -297,12 +297,12 @@ impl Header {
             None
         };
         header.evlr = if header.version.supports::<Evlrs>() {
-            Evlr::read_from(&mut read)?.into_option()
+            Evlr::read_from(read)?.into_option()
         } else {
             None
         };
         header.large_file = if header.version.supports::<LargeFiles>() {
-            Some(LargeFile::read_from(&mut read)?)
+            Some(LargeFile::read_from(read)?)
         } else {
             None
         };
@@ -388,7 +388,7 @@ impl Default for Header {
 }
 
 impl Evlr {
-    fn read_from<R: Read>(mut read: R) -> Result<Evlr> {
+    fn read_from<R: Read>(read: &mut R) -> Result<Evlr> {
         Ok(Evlr {
             start_of_first_evlr: read.read_u64::<LittleEndian>()?,
             number_of_evlrs: read.read_u32::<LittleEndian>()?,
@@ -405,7 +405,7 @@ impl Evlr {
 }
 
 impl LargeFile {
-    fn read_from<R: Read>(mut read: R) -> Result<LargeFile> {
+    fn read_from<R: Read>(read: &mut R) -> Result<LargeFile> {
         let number_of_point_records = read.read_u64::<LittleEndian>()?;
         let mut number_of_points_by_return = [0; 15];
         for n in &mut number_of_points_by_return {
