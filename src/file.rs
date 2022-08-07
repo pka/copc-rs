@@ -74,7 +74,6 @@ impl CopcHeaders {
             panic!("format error");
         }
         let copc_info = CopcInfo::read_from(Cursor::new(copc_vlr.data))?;
-        dbg!(&copc_info);
         let mut headers = CopcHeaders {
             las_header,
             copc_info,
@@ -82,6 +81,7 @@ impl CopcHeaders {
             projection_vlr: None,
             hierarchy_vlr: None,
         };
+        dbg!(headers.las_header.number_of_variable_length_records);
         for _i in 0..headers.las_header.number_of_variable_length_records - 1 {
             let vlr = Vlr::read_from(src).unwrap();
             dbg!(&vlr);

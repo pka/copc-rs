@@ -132,10 +132,10 @@ pub struct Header {
     /// Bytes VLR (see Table 24 and Table 25).
     pub point_data_record_length: u16,
 
-    /// This field contains the total number of point records within the file.
+    /// (Legacy) This field contains the total number of point records within the file.
     pub number_of_point_records: u32,
 
-    /// This field contains an array of the total point records per return.
+    /// (Legacy) This field contains an array of the total point records per return.
     ///
     /// The first unsigned long value will be the total number of records from the first return,
     /// and the second contains the total number for return two, and so forth up to five returns.
@@ -314,6 +314,12 @@ impl Header {
             Vec::new()
         };
         Ok(header)
+    }
+
+    pub fn number_of_points(&self) -> u64 {
+        self.large_file
+            .map(|l| l.number_of_point_records)
+            .unwrap_or(self.number_of_point_records as u64)
     }
 
     /// Returns the total file offset to the first byte *after* all of the points.
