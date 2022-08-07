@@ -1,20 +1,24 @@
 mod file;
+mod header;
 
 use crate::file::read_header_and_vlrs;
 use laz::laszip::LasZipDecompressor;
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Seek, SeekFrom};
 
 fn main() -> laz::Result<()> {
-    let mut laz_file = BufReader::new(File::open("tests/data/autzen.laz")?);
-    let (laz_header, laz_vlr) = read_header_and_vlrs(&mut laz_file)?;
+    let lazfn = "tests/data/autzen.laz";
+    let (laz_header, laz_vlr) = read_header_and_vlrs(lazfn)?;
+
+    let mut laz_file = BufReader::new(File::open(lazfn)?);
     let laz_vlr = laz_vlr.expect("Expected a laszip VLR for laz file");
+    laz_file.seek(SeekFrom::Start(laz_header.offset_to_point_data as u64))?;
 
     let num_points_per_iter = 100;
 
-    let point_size = laz_header.point_size as usize;
+    let point_size = laz_header.point_data_record_length as usize;
     let mut points = vec![0u8; point_size * num_points_per_iter];
-    let mut num_points_left = laz_header.num_points as usize;
+    let mut num_points_left = laz_header.number_of_point_records as usize;
 
     let mut decompressor = LasZipDecompressor::new(&mut laz_file, laz_vlr.clone())?;
     while num_points_left > 0 {
@@ -35,7 +39,7 @@ fn main() -> laz::Result<()> {
         num_points_left -= num_points_to_read;
     }
     let point_data = &points[0..point_size * 2];
-    dbg!(point_data);
+    // dbg!(point_data);
     dbg!(laz_header, laz_vlr);
     let raw_point =
         las::raw::Point::read_from(point_data, &las::point::Format::new(10).unwrap()).unwrap();

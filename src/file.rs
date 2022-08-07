@@ -2,7 +2,9 @@ use crate::header::Header;
 use byteorder::{LittleEndian, ReadBytesExt};
 use laz::{LasZipDecompressor, LazVlr};
 use std::fmt;
-use std::io::{Read, Seek, SeekFrom};
+use std::fs::File;
+use std::io::BufReader;
+use std::io::{Read, Seek};
 
 pub struct Vlr {
     user_id: [u8; 16],
@@ -72,13 +74,10 @@ pub fn read_vlrs_and_get_laszip_vlr<R: Read>(src: &mut R, header: &Header) -> Op
     laszip_vlr
 }
 
-pub fn read_header_and_vlrs<R: Read + Seek>(
-    src: &mut R,
-) -> std::io::Result<(Header, Option<LazVlr>)> {
-    let hdr = Header::read_from(src).unwrap();
-    src.seek(SeekFrom::Start(hdr.header_size as u64))?;
-    let laz_vlr = read_vlrs_and_get_laszip_vlr(src, &hdr);
-    src.seek(SeekFrom::Start(hdr.offset_to_point_data as u64))?;
+pub fn read_header_and_vlrs(lazfn: &str) -> std::io::Result<(Header, Option<LazVlr>)> {
+    let mut laz_file = BufReader::new(File::open(lazfn)?);
+    let hdr = Header::read_from(&mut laz_file).unwrap();
+    let laz_vlr = read_vlrs_and_get_laszip_vlr(&mut laz_file, &hdr);
     Ok((hdr, laz_vlr))
 }
 
