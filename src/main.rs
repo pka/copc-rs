@@ -2,6 +2,7 @@ mod copc;
 mod file;
 mod header;
 
+use crate::copc::Page;
 use crate::file::CopcHeaders;
 use las::{Transform, Vector};
 use laz::laszip::LasZipDecompressor;
@@ -41,7 +42,15 @@ fn main() -> laz::Result<()> {
         },
     };
 
-    // laz_file.seek(SeekFrom::Start(las_header.offset_to_point_data as u64))?;
+    // Read root hierarchy page
+    laz_file.seek(SeekFrom::Start(copc_headers.copc_info.root_hier_offset))?;
+    let page = Page::read_from(&mut laz_file, copc_headers.copc_info.root_hier_size)?;
+    let page_entry = page.entries[0];
+    dbg!(page_entry);
+    // Point reading by page not supported yet. LasZipDecompressor always reads Chunk table.
+    // laz_file.seek(SeekFrom::Start(page_entry.offset))?;
+
+    laz_file.seek(SeekFrom::Start(las_header.offset_to_point_data as u64))?;
 
     let num_points_per_iter = 100;
     let max_points = 5;

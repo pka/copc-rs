@@ -79,22 +79,22 @@ impl VoxelKey {
 #[derive(Clone, Copy, Default, Debug)]
 pub struct Entry {
     /// EPT key of the data to which this entry corresponds
-    key: VoxelKey,
+    pub key: VoxelKey,
 
     /// Absolute offset to the data chunk if the pointCount > 0.
     /// Absolute offset to a child hierarchy page if the pointCount is -1.
     /// 0 if the pointCount is 0.
-    offset: u64,
+    pub offset: u64,
 
     /// Size of the data chunk in bytes (compressed size) if the pointCount > 0.
     /// Size of the hierarchy page if the pointCount is -1.
     /// 0 if the pointCount is 0.
-    byte_size: i32,
+    pub byte_size: i32,
 
     /// If > 0, represents the number of points in the data chunk.
     /// If -1, indicates the information for this octree node is found in another hierarchy page.
     /// If 0, no point data exists for this key, though may exist for child entries.
-    point_count: i32,
+    pub point_count: i32,
 }
 
 impl Entry {
@@ -116,7 +116,7 @@ impl Entry {
 #[derive(Clone, Debug)]
 pub struct Page {
     /// Hierarchy page entries
-    entries: Vec<Entry>,
+    pub entries: Vec<Entry>,
 }
 
 impl Page {
