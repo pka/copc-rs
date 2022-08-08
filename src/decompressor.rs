@@ -5,7 +5,7 @@ use std::io::{Read, Seek, SeekFrom};
 
 /// LasZip decompressor.
 pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
-    vlr: LazVlr,
+    vlr: &'a LazVlr,
     record_decompressor: Box<dyn RecordDecompressor<R> + Send + 'a>,
     data_start: u64,
     chunk_table: Option<ChunkTable>,
@@ -17,7 +17,7 @@ pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
 impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
     /// Creates a new instance from a data source of compressed points
     /// and the LazVlr describing the compressed data
-    pub fn new(mut source: R, data_start: Option<u64>, vlr: LazVlr) -> laz::Result<Self> {
+    pub fn new(mut source: R, data_start: Option<u64>, vlr: &'a LazVlr) -> laz::Result<Self> {
         let (chunk_table, data_start) = if let Some(data_start) = data_start {
             (None, data_start)
         } else {
