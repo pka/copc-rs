@@ -201,8 +201,7 @@ pub struct Header {
     #[allow(missing_docs)]
     pub large_file: Option<LargeFile>,
 
-    #[allow(missing_docs)]
-    pub padding: Vec<u8>,
+    padding: Vec<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

@@ -121,10 +121,11 @@ impl<'a, R: Read + Seek + Send> Iterator for PointIter<'a, R> {
         if self.num_points_left == 0 {
             return None;
         }
-        let point_data = &mut self.point[..];
-        self.decompressor.decompress_one(point_data).unwrap();
-        let point_data = &self.point[..];
-        let raw_point = las::raw::Point::read_from(point_data, &self.point_format).unwrap();
+        self.decompressor
+            .decompress_one(self.point.as_mut_slice())
+            .unwrap();
+        let raw_point =
+            las::raw::Point::read_from(self.point.as_slice(), &self.point_format).unwrap();
         let point = las::point::Point::new(raw_point, &self.transforms);
 
         self.num_points_left -= 1;

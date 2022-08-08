@@ -26,7 +26,7 @@ pub struct CopcInfo {
     /// Maximum of GPSTime
     pub gpstime_maximum: f64,
     /// Must be 0
-    pub reserved: [u64; 11],
+    _reserved: [u64; 11],
 }
 
 impl CopcInfo {
