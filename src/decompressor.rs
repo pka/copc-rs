@@ -1,10 +1,7 @@
-use std::io::{Read, Seek, SeekFrom};
-
+use laz::laszip::{ChunkTable, LazVlr};
 use laz::record::{LayeredPointRecordDecompressor, RecordDecompressor};
 use laz::LasZipError::MissingChunkTable;
-
-use laz::laszip::ChunkTable;
-use laz::laszip::LazVlr;
+use std::io::{Read, Seek, SeekFrom};
 
 /// LasZip decompressor.
 pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
@@ -20,14 +17,19 @@ pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
 impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
     /// Creates a new instance from a data source of compressed points
     /// and the LazVlr describing the compressed data
-    pub fn new(mut source: R, vlr: LazVlr) -> laz::Result<Self> {
-        let chunk_table = match ChunkTable::read_from(&mut source, &vlr) {
-            Ok(chunk_table) => Some(chunk_table),
-            Err(e) => {
-                return Err(e);
-            }
+    pub fn new(mut source: R, data_start: Option<u64>, vlr: LazVlr) -> laz::Result<Self> {
+        let (chunk_table, data_start) = if let Some(data_start) = data_start {
+            (None, data_start)
+        } else {
+            let chunk_table = match ChunkTable::read_from(&mut source, &vlr) {
+                Ok(chunk_table) => Some(chunk_table),
+                Err(e) => {
+                    return Err(e);
+                }
+            };
+            let data_start = source.seek(SeekFrom::Current(0))?;
+            (chunk_table, data_start)
         };
-        let data_start = source.seek(SeekFrom::Current(0))?;
 
         let decompressor = LayeredPointRecordDecompressor::new(source);
         let record_decompressor = Box::new(decompressor) as Box<dyn RecordDecompressor<R> + Send>;

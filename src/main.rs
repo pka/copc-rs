@@ -48,17 +48,17 @@ fn main() -> laz::Result<()> {
     let page = Page::read_from(&mut laz_file, copc_headers.copc_info.root_hier_size)?;
     let page_entry = page.entries[0];
     dbg!(page_entry);
-    // Point reading by page not supported yet. LasZipDecompressor always reads Chunk table.
-    // laz_file.seek(SeekFrom::Start(page_entry.offset))?;
 
-    laz_file.seek(SeekFrom::Start(las_header.offset_to_point_data as u64))?;
+    // laz_file.seek(SeekFrom::Start(las_header.offset_to_point_data as u64))?;
+    // let mut decompressor = LasZipDecompressor::new(&mut laz_file, None, laz_vlr)?;
+    laz_file.seek(SeekFrom::Start(page_entry.offset))?;
+    let mut decompressor =
+        LasZipDecompressor::new(&mut laz_file, Some(page_entry.offset), laz_vlr)?;
 
     let num_points_per_iter = 100;
     let max_points = 5;
     let mut points = vec![0u8; point_size * num_points_per_iter];
     let mut num_points_left = las_header.number_of_points().min(max_points) as usize;
-
-    let mut decompressor = LasZipDecompressor::new(&mut laz_file, laz_vlr)?;
     while num_points_left > 0 {
         let num_points_to_read = num_points_per_iter.min(num_points_left);
 
