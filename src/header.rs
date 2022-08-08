@@ -3,7 +3,7 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 use las::feature::{Evlrs, LargeFiles, Waveforms};
 use las::raw::LASF;
-use las::{Result, Version};
+use las::Version;
 use std::io::Read;
 
 /// A las header.
@@ -252,7 +252,7 @@ impl Header {
     /// let mut file = File::open("tests/data/autzen.las").unwrap();
     /// let header = Header::read_from(&mut file).unwrap();
     /// ```
-    pub fn read_from<R: Read>(read: &mut R) -> Result<Header> {
+    pub fn read_from<R: Read>(read: &mut R) -> las::Result<Header> {
         use las::header::Error;
 
         let mut header = Header::default();
@@ -394,7 +394,7 @@ impl Default for Header {
 }
 
 impl Evlr {
-    fn read_from<R: Read>(read: &mut R) -> Result<Evlr> {
+    fn read_from<R: Read>(read: &mut R) -> las::Result<Evlr> {
         Ok(Evlr {
             start_of_first_evlr: read.read_u64::<LittleEndian>()?,
             number_of_evlrs: read.read_u32::<LittleEndian>()?,
@@ -411,7 +411,7 @@ impl Evlr {
 }
 
 impl LargeFile {
-    fn read_from<R: Read>(read: &mut R) -> Result<LargeFile> {
+    fn read_from<R: Read>(read: &mut R) -> las::Result<LargeFile> {
         let number_of_point_records = read.read_u64::<LittleEndian>()?;
         let mut number_of_points_by_return = [0; 15];
         for n in &mut number_of_points_by_return {

@@ -1,11 +1,12 @@
 mod copc;
 mod decompressor;
-mod file;
 mod header;
+mod reader;
+mod vlr;
 
 use crate::copc::Page;
 use crate::decompressor::LasZipDecompressor;
-use crate::file::CopcHeaders;
+use crate::reader::CopcReader;
 use las::{Transform, Vector};
 use std::env;
 use std::fs::File;
@@ -17,7 +18,7 @@ fn main() -> laz::Result<()> {
         .unwrap_or("tests/data/autzen.laz".to_string());
     let mut laz_file = BufReader::new(File::open(lazfn)?);
 
-    let copc_headers = CopcHeaders::read_from(&mut laz_file)?;
+    let copc_headers = CopcReader::create(&mut laz_file)?;
     let las_header = copc_headers.las_header;
     let laz_vlr = copc_headers
         .laszip_vlr
