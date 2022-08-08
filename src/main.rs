@@ -1,11 +1,12 @@
 mod copc;
+mod decompressor;
 mod file;
 mod header;
 
 use crate::copc::Page;
+use crate::decompressor::LasZipDecompressor;
 use crate::file::CopcHeaders;
 use las::{Transform, Vector};
-use laz::laszip::LasZipDecompressor;
 use std::env;
 use std::fs::File;
 use std::io::{BufReader, Seek, SeekFrom};
