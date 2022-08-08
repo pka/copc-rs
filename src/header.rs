@@ -321,34 +321,6 @@ impl Header {
             .map(|l| l.number_of_point_records)
             .unwrap_or(self.number_of_point_records as u64)
     }
-
-    /// Returns the total file offset to the first byte *after* all of the points.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use las::raw::Header;
-    /// assert_eq!(227, Header::default().offset_to_end_of_points());
-    /// ```
-    pub fn offset_to_end_of_points(&self) -> u64 {
-        u64::from(self.offset_to_point_data)
-            + u64::from(self.number_of_point_records) * u64::from(self.point_data_record_length)
-    }
-
-    pub fn num_extra_bytes(&self) -> u16 {
-        let point_size_wo_extra = match self.point_data_record_format {
-            0 => 20,
-            1 => 28,
-            2 => 26,
-            3 => 34,
-            6 => 30,
-            7 => 36,
-            8 => 38,
-            _ => panic!("Unknown fmt id"),
-        };
-
-        self.point_data_record_length - point_size_wo_extra
-    }
 }
 
 impl Default for Header {

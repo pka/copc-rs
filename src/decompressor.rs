@@ -14,6 +14,7 @@ pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
     num_points_in_chunk: u64,
 }
 
+// Variant of laz::LasZipDecompressor with optional ChunkTable reading
 impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
     /// Creates a new instance from a data source of compressed points
     /// and the LazVlr describing the compressed data
@@ -174,25 +175,6 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
             self.record_decompressor.get_mut().seek(SeekFrom::End(0))?;
         }
         Ok(())
-    }
-
-    /// Returns the vlr used.
-    pub fn vlr(&self) -> &LazVlr {
-        &self.vlr
-    }
-
-    /// Consumes the decompressor and returns the data source.
-    pub fn into_inner(self) -> R {
-        self.record_decompressor.box_into_inner()
-    }
-
-    pub fn get_mut(&mut self) -> &mut R {
-        self.record_decompressor.get_mut()
-    }
-
-    /// Returns a reference to the data source.
-    pub fn get(&self) -> &R {
-        self.record_decompressor.get()
     }
 
     #[inline(always)]
