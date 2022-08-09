@@ -86,6 +86,14 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
         Ok(())
     }
 
+    pub fn source_seek(&mut self, offset: u64) -> std::io::Result<()> {
+        self.record_decompressor
+            .get_mut()
+            .seek(SeekFrom::Start(offset))?;
+        self.reset_for_new_chunk();
+        Ok(())
+    }
+
     /// Seeks to the point designed by the index
     ///
     /// # Important

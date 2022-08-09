@@ -204,7 +204,7 @@ pub struct Header {
     padding: Vec<u8>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 #[allow(missing_docs)]
 pub struct Evlr {
     /// **las 1.4**: This value provides the offset, in bytes, from the beginning of the LAS file to the first
@@ -217,7 +217,7 @@ pub struct Evlr {
     pub number_of_evlrs: u32,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 #[allow(missing_docs)]
 pub struct LargeFile {
     /// **las 1.4**: This field contains the total number of point records in the file.
@@ -317,6 +317,7 @@ impl Header {
 
     pub fn number_of_points(&self) -> u64 {
         self.large_file
+            .as_ref()
             .map(|l| l.number_of_point_records)
             .unwrap_or(self.number_of_point_records as u64)
     }
