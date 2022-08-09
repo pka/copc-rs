@@ -255,36 +255,42 @@ impl<'a, R: Read + Seek + Send> Iterator for PointIter<'a, R> {
         if self.total_points_left == 0 {
             return None;
         }
-        if self.node_points_left == 0 {
-            if let Some(node) = self.nodes.pop() {
-                self.decompressor.source_seek(node.entry.offset).unwrap();
-                self.node_points_left = node.entry.point_count as usize;
+        let mut in_bounds = false;
+        while !in_bounds {
+            if self.node_points_left == 0 {
+                if let Some(node) = self.nodes.pop() {
+                    self.decompressor.source_seek(node.entry.offset).unwrap();
+                    self.node_points_left = node.entry.point_count as usize;
+                }
             }
-        }
-        self.decompressor
-            .decompress_one(self.point.as_mut_slice())
-            .unwrap();
-        self.node_points_left -= 1;
-        self.total_points_left -= 1;
-        if let Some(_bounds) = &self.bounds {
-            // MINS = np.round(
-            //     (bounds.mins - self.header.offsets) / self.header.scales
-            // ).astype(np.int32)
-            // MAXS = np.round(
-            //     (bounds.maxs - self.header.offsets) / self.header.scales
-            // ).astype(np.int32)
-            // x_keep = (MINS[0] <= points.X) & (points.X <= MAXS[0])
-            // y_keep = (MINS[1] <= points.Y) & (points.Y <= MAXS[1])
-            // z_keep = (MINS[2] <= points.Z) & (points.Z <= MAXS[2])
+            self.decompressor
+                .decompress_one(self.point.as_mut_slice())
+                .unwrap();
+            self.node_points_left -= 1;
+            self.total_points_left -= 1;
+            if let Some(_bounds) = &self.bounds {
+                // MINS = np.round(
+                //     (bounds.mins - self.header.offsets) / self.header.scales
+                // ).astype(np.int32)
+                // MAXS = np.round(
+                //     (bounds.maxs - self.header.offsets) / self.header.scales
+                // ).astype(np.int32)
+                // x_keep = (MINS[0] <= points.X) & (points.X <= MAXS[0])
+                // y_keep = (MINS[1] <= points.Y) & (points.Y <= MAXS[1])
+                // z_keep = (MINS[2] <= points.Z) & (points.Z <= MAXS[2])
 
-            // # using scaled coordinates
-            // # x, y, z = np.array(points.x), np.array(points.y), np.array(points.z)
-            // # x_keep = (bounds.mins[0] <= x) & (x <= bounds.maxs[0])
-            // # y_keep = (bounds.mins[1] <= y) & (y <= bounds.maxs[1])
-            // # z_keep = (bounds.mins[2] <= z) & (z <= bounds.maxs[2])
+                // # using scaled coordinates
+                // # x, y, z = np.array(points.x), np.array(points.y), np.array(points.z)
+                // # x_keep = (bounds.mins[0] <= x) & (x <= bounds.maxs[0])
+                // # y_keep = (bounds.mins[1] <= y) & (y <= bounds.maxs[1])
+                // # z_keep = (bounds.mins[2] <= z) & (z <= bounds.maxs[2])
 
-            // keep_mask = x_keep & y_keep & z_keep
-            // points.array = points.array[keep_mask].copy()
+                // keep_mask = x_keep & y_keep & z_keep
+                // points.array = points.array[keep_mask].copy()
+                in_bounds = true;
+            } else {
+                in_bounds = true;
+            }
         }
         let raw_point =
             las::raw::Point::read_from(self.point.as_slice(), &self.point_format).unwrap();
