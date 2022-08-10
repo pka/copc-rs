@@ -36,7 +36,9 @@ use bevy::{
 };
 use bytemuck::{cast_slice, Pod, Zeroable};
 
-use las::{Read as LasRead, Reader};
+use copc_rs::reader::{CopcReader, LodSelection};
+use std::fs::File;
+use std::io::BufReader;
 
 // Viewer based on https://github.com/superdump/bevy-vertex-pulling
 fn main() {
@@ -77,7 +79,7 @@ struct Quads {
 
 fn setup(mut commands: Commands) {
     let laz = std::env::args().nth(1).expect("COPC file required");
-    let quads = read_laz(&laz);
+    let quads = read_copc(&laz);
     commands
         .spawn_bundle(PerspectiveCameraBundle {
             transform: Transform::from_translation(Vec3::new(30.0, 30.0, 30.0))
@@ -89,35 +91,38 @@ fn setup(mut commands: Commands) {
     commands.spawn_bundle((quads,));
 }
 
-fn read_laz(laz_file: &str) -> Quads {
-    let mut reader = Reader::from_path(laz_file).unwrap();
+fn read_copc(lazfn: &str) -> Quads {
+    let laz_file = BufReader::new(File::open(lazfn).unwrap());
+    let mut reader = CopcReader::open(laz_file).unwrap();
     let mut quads = Quads::default();
     let mut bboxmin = Vec3::new(f32::MAX, f32::MAX, f32::MAX);
     let mut bboxmax = Vec3::new(f32::MIN, f32::MIN, f32::MIN);
 
-    reader.points().for_each(|wrapped_point| {
-        let point = wrapped_point.unwrap();
-        // dbg!(&point);
-        let center = Vec3::new(point.x as f32, point.z as f32, point.y as f32);
-        bboxmin = bboxmin.min(center);
-        bboxmax = bboxmax.max(center);
-        let color = point
-            .color
-            .map(|col| {
-                Color::rgb(
-                    col.red as f32 / 255.0,
-                    col.green as f32 / 255.0,
-                    col.blue as f32 / 255.0,
-                )
-            })
-            .unwrap_or(Color::WHITE);
-        let quad = Quad {
-            color,
-            center,
-            half_extents: 0.1 * Vec3::ONE,
-        };
-        quads.data.push(quad);
-    });
+    reader
+        .points(LodSelection::Level(0), None)
+        .unwrap()
+        .for_each(|point| {
+            // dbg!(&point);
+            let center = Vec3::new(point.x as f32, point.z as f32, point.y as f32);
+            bboxmin = bboxmin.min(center);
+            bboxmax = bboxmax.max(center);
+            let color = point
+                .color
+                .map(|col| {
+                    Color::rgb(
+                        col.red as f32 / 255.0,
+                        col.green as f32 / 255.0,
+                        col.blue as f32 / 255.0,
+                    )
+                })
+                .unwrap_or(Color::WHITE);
+            let quad = Quad {
+                color,
+                center,
+                half_extents: 0.1 * Vec3::ONE,
+            };
+            quads.data.push(quad);
+        });
 
     quads.bbox = Aabb::from_min_max(bboxmin, bboxmax);
     quads

@@ -7,6 +7,6 @@ edition = "2021"
 trace_tracy = ["bevy/trace_tracy"]
 
 [dependencies]
-bevy = { version = "0.7.0-dev", git = "https://github.com/bevyengine/bevy", branch = "main" }
-las = { version = "0.7.4", features = ["laz"] }
+bevy = { version = "0.7.0-dev", git = "https://github.com/bevyengine/bevy", rev = "6f16580b8" }
+copc-rs = { path = ".." }
 bytemuck = "1.9.1"
