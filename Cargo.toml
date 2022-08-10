@@ -5,8 +5,20 @@ default-members = ["."]
 [package]
 name = "copc-rs"
 version = "0.1.0"
+authors = ["Pirmin Kalberer <pka@sourcepole.ch>"]
 edition = "2018"
 resolver = "2"
+
+description = "Cloud Optimized Point Cloud (COPC) reader."
+homepage = "https://github.com/pka/copc-rs"
+repository = "https://github.com/pka/copc-rs"
+readme = "README.md"
+license-file = "COPYING"
+keywords = ["lidar", "pointcloud", "copc", "las", "geo"]
+exclude = [
+    "tests/data",    
+]
+
 default-run = "copc-rs"
 
 [dependencies]
