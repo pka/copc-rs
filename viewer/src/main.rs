@@ -76,9 +76,7 @@ struct Quads {
 }
 
 fn setup(mut commands: Commands) {
-    let laz = std::env::args()
-        .nth(1)
-        .unwrap_or("../tests/data/autzen.laz".to_string());
+    let laz = std::env::args().nth(1).expect("COPC file required");
     let quads = read_laz(&laz);
     commands
         .spawn_bundle(PerspectiveCameraBundle {
