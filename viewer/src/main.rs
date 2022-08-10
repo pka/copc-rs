@@ -119,7 +119,7 @@ fn read_copc(lazfn: &str) -> Quads {
             let quad = Quad {
                 color,
                 center,
-                half_extents: 0.1 * Vec3::ONE,
+                half_extents: 0.01 * Vec3::ONE,
             };
             quads.data.push(quad);
         });
