@@ -19,8 +19,6 @@ exclude = [
     "tests/data",    
 ]
 
-default-run = "copc-rs"
-
 [dependencies]
 byteorder = "1.4.3"
 las = "0.7.7"

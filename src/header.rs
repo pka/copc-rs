@@ -248,7 +248,7 @@ impl Header {
     /// ```
     /// use std::fs::File;
     /// use las::raw::Header;
-    /// let mut file = File::open("tests/data/autzen.las").unwrap();
+    /// let mut file = File::open("tests/data/autzen.laz").unwrap();
     /// let header = Header::read_from(&mut file).unwrap();
     /// ```
     pub fn read_from<R: Read>(read: &mut R) -> las::Result<Header> {
