@@ -1,4 +1,4 @@
-use copc_rs::reader::{CopcReader, LodSelection};
+use copc_rs::{CopcReader, LodSelection};
 use std::env;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};

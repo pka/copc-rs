@@ -36,7 +36,7 @@ use bevy::{
 };
 use bytemuck::{cast_slice, Pod, Zeroable};
 
-use copc_rs::reader::{CopcReader, LodSelection};
+use copc_rs::{CopcReader, LodSelection};
 use std::fs::File;
 use std::io::BufReader;
 

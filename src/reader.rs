@@ -194,9 +194,6 @@ impl<R: Read + Seek + Send> CopcReader<R> {
         let nodes = self.load_octree_for_query(levels, &bounds)?;
         let total_points_left = nodes.iter().map(|n| n.entry.point_count as usize).sum();
 
-        // if bounds is not None:
-        //     bounds = bounds.ensure_3d(self.header.mins, self.header.maxs)
-
         let transforms = Vector {
             x: Transform {
                 scale: self.las_header.x_scale_factor,
@@ -211,6 +208,20 @@ impl<R: Read + Seek + Send> CopcReader<R> {
                 offset: self.las_header.z_offset,
             },
         };
+
+        // if bounds is not None:
+        //     bounds = bounds.ensure_3d(self.header.mins, self.header.maxs)
+
+        // Reverse transform to unscaled values
+        let bounds = bounds.map(|bounds| {
+            let min_x = transforms.x.inverse(bounds.min_x).unwrap();
+            let min_y = transforms.y.inverse(bounds.min_y).unwrap();
+            let min_z = transforms.z.inverse(bounds.min_z).unwrap();
+            let max_x = transforms.x.inverse(bounds.max_x).unwrap();
+            let max_y = transforms.y.inverse(bounds.max_y).unwrap();
+            let max_z = transforms.z.inverse(bounds.max_z).unwrap();
+            [min_x, min_y, min_z, max_x, max_y, max_z]
+        });
 
         let laz_vlr = self
             .laszip_vlr
@@ -239,7 +250,7 @@ impl<R: Read + Seek + Send> CopcReader<R> {
 /// LasZip point iterator
 pub struct PointIter<'a, R: Read + Seek + Send> {
     nodes: Vec<OctreeNode>,
-    bounds: Option<Bounds>,
+    bounds: Option<[i32; 6]>,
     point_format: las::point::Format,
     transforms: Vector<Transform>,
     decompressor: LasZipDecompressor<'a, &'a mut R>,
@@ -255,45 +266,33 @@ impl<'a, R: Read + Seek + Send> Iterator for PointIter<'a, R> {
         if self.total_points_left == 0 {
             return None;
         }
+        let mut raw_point = las::raw::Point::default();
         let mut in_bounds = false;
         while !in_bounds {
             if self.node_points_left == 0 {
                 if let Some(node) = self.nodes.pop() {
                     self.decompressor.source_seek(node.entry.offset).unwrap();
                     self.node_points_left = node.entry.point_count as usize;
+                } else {
+                    return None;
                 }
             }
             self.decompressor
                 .decompress_one(self.point.as_mut_slice())
                 .unwrap();
+            raw_point =
+                las::raw::Point::read_from(self.point.as_slice(), &self.point_format).unwrap();
             self.node_points_left -= 1;
             self.total_points_left -= 1;
-            if let Some(_bounds) = &self.bounds {
-                // MINS = np.round(
-                //     (bounds.mins - self.header.offsets) / self.header.scales
-                // ).astype(np.int32)
-                // MAXS = np.round(
-                //     (bounds.maxs - self.header.offsets) / self.header.scales
-                // ).astype(np.int32)
-                // x_keep = (MINS[0] <= points.X) & (points.X <= MAXS[0])
-                // y_keep = (MINS[1] <= points.Y) & (points.Y <= MAXS[1])
-                // z_keep = (MINS[2] <= points.Z) & (points.Z <= MAXS[2])
-
-                // # using scaled coordinates
-                // # x, y, z = np.array(points.x), np.array(points.y), np.array(points.z)
-                // # x_keep = (bounds.mins[0] <= x) & (x <= bounds.maxs[0])
-                // # y_keep = (bounds.mins[1] <= y) & (y <= bounds.maxs[1])
-                // # z_keep = (bounds.mins[2] <= z) & (z <= bounds.maxs[2])
-
-                // keep_mask = x_keep & y_keep & z_keep
-                // points.array = points.array[keep_mask].copy()
-                in_bounds = true;
+            if let Some(bounds) = &self.bounds {
+                let x_keep = (bounds[0] <= raw_point.x) && (raw_point.x <= bounds[3]);
+                let y_keep = (bounds[1] <= raw_point.y) && (raw_point.y <= bounds[4]);
+                let z_keep = (bounds[2] <= raw_point.z) && (raw_point.z <= bounds[5]);
+                in_bounds = x_keep && y_keep && z_keep;
             } else {
                 in_bounds = true;
             }
         }
-        let raw_point =
-            las::raw::Point::read_from(self.point.as_slice(), &self.point_format).unwrap();
         let point = las::point::Point::new(raw_point, &self.transforms);
 
         Some(point)

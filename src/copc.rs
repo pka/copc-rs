@@ -97,13 +97,14 @@ impl VoxelKey {
     }
     pub fn bounds(&self, root_bounds: &Bounds) -> Bounds {
         // In an octree every cell is a cube
-        let side_size = (root_bounds.max_x - root_bounds.min_x) / (2 ^ self.level) as f64;
-        let min_x = self.x as f64 * side_size;
-        let min_y = self.y as f64 * side_size;
-        let min_z = self.z as f64 * side_size;
-        let max_x = (self.x + 1) as f64 * side_size;
-        let max_y = (self.y + 1) as f64 * side_size;
-        let max_z = (self.z + 1) as f64 * side_size;
+        let side_size =
+            (root_bounds.max_x - root_bounds.min_x) / 2_u32.pow(self.level as u32) as f64;
+        let min_x = root_bounds.min_x + self.x as f64 * side_size;
+        let min_y = root_bounds.min_y + self.y as f64 * side_size;
+        let min_z = root_bounds.min_z + self.z as f64 * side_size;
+        let max_x = root_bounds.min_x + (self.x + 1) as f64 * side_size;
+        let max_y = root_bounds.min_y + (self.y + 1) as f64 * side_size;
+        let max_z = root_bounds.min_z + (self.z + 1) as f64 * side_size;
         Bounds::new(min_x, min_y, min_z, max_x, max_y, max_z)
     }
 }
