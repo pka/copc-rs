@@ -5,7 +5,7 @@
 //! use copc_rs::{BoundsSelection, CopcReader, LodSelection};
 //! # use std::fs::File;
 //! # use std::io::BufReader;
-//! 
+//!
 //! fn main() -> laz::Result<()> {
 //!     let laz_file = BufReader::new(File::open("autzen-classified.copc.laz")?);
 //!     let mut copc_reader = CopcReader::open(laz_file)?;

@@ -97,6 +97,11 @@ impl<R: Read + Seek + Send> CopcReader<R> {
         &self.las_header
     }
 
+    /// COPC info VLR content
+    pub fn copc_info(&self) -> &CopcInfo {
+        &self.copc_info
+    }
+
     fn load_page(&mut self, offset: u64, byte_size: u64) -> std::io::Result<()> {
         self.src.seek(SeekFrom::Start(offset))?;
         let mut page = HierarchyPage::read_from(&mut self.src, byte_size)?;
