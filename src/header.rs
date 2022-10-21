@@ -390,14 +390,14 @@ impl LargeFile {
             *n = read.read_u64::<LittleEndian>()?
         }
         Ok(LargeFile {
-            number_of_point_records: number_of_point_records,
-            number_of_points_by_return: number_of_points_by_return,
+            number_of_point_records,
+            number_of_points_by_return,
         })
     }
 }
 
-pub fn some_or_none_if_zero<T: num::Zero>(n: T) -> Option<T> {
-    if n.is_zero() {
+fn some_or_none_if_zero(n: u64) -> Option<u64> {
+    if n == 0 {
         None
     } else {
         Some(n)
