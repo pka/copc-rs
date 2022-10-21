@@ -45,6 +45,14 @@ pub enum LodSelection {
     LevelMinMax(i32, i32),
 }
 
+/// Select points within bounds
+pub enum BoundsSelection {
+    /// No bounds filter.
+    All,
+    /// Select points within bounds.
+    Within(Bounds),
+}
+
 impl<R: Read + Seek + Send> CopcReader<R> {
     /// Setup by reading LAS header and LasZip VRLs
     pub fn open(mut src: R) -> std::io::Result<Self> {
@@ -84,6 +92,11 @@ impl<R: Read + Seek + Send> CopcReader<R> {
         Ok(reader)
     }
 
+    /// LAS header
+    pub fn header(&self) -> &Header {
+        &self.las_header
+    }
+
     fn load_page(&mut self, offset: u64, byte_size: u64) -> std::io::Result<()> {
         self.src.seek(SeekFrom::Start(offset))?;
         let mut page = HierarchyPage::read_from(&mut self.src, byte_size)?;
@@ -100,7 +113,7 @@ impl<R: Read + Seek + Send> CopcReader<R> {
     fn load_octree_for_query(
         &mut self,
         level_range: LodSelection,
-        query_bounds: &Option<Bounds>,
+        query_bounds: &BoundsSelection,
     ) -> std::io::Result<Vec<OctreeNode>> {
         let (level_min, level_max) = match level_range {
             LodSelection::All => (0, i32::MAX),
@@ -140,7 +153,7 @@ impl<R: Read + Seek + Send> CopcReader<R> {
         while let Some(mut current_node) = nodes_to_load.pop() {
             current_node.bounds = current_node.entry.key.bounds(&root_bounds);
 
-            if let Some(bounds) = query_bounds {
+            if let BoundsSelection::Within(bounds) = query_bounds {
                 if !current_node.bounds.intersects(&bounds) {
                     continue;
                 }
@@ -185,11 +198,11 @@ impl<R: Read + Seek + Send> CopcReader<R> {
         Ok(satisfying_nodes)
     }
 
-    /// Point iterator for selected level
+    /// Point iterator for selected level and bounds
     pub fn points(
         &mut self,
         levels: LodSelection,
-        bounds: Option<Bounds>,
+        bounds: BoundsSelection,
     ) -> laz::Result<PointIter<R>> {
         let nodes = self.load_octree_for_query(levels, &bounds)?;
         let total_points_left = nodes.iter().map(|n| n.entry.point_count as usize).sum();
@@ -209,19 +222,19 @@ impl<R: Read + Seek + Send> CopcReader<R> {
             },
         };
 
-        // if bounds is not None:
-        //     bounds = bounds.ensure_3d(self.header.mins, self.header.maxs)
-
         // Reverse transform to unscaled values
-        let bounds = bounds.map(|bounds| {
-            let min_x = transforms.x.inverse(bounds.min_x).unwrap();
-            let min_y = transforms.y.inverse(bounds.min_y).unwrap();
-            let min_z = transforms.z.inverse(bounds.min_z).unwrap();
-            let max_x = transforms.x.inverse(bounds.max_x).unwrap();
-            let max_y = transforms.y.inverse(bounds.max_y).unwrap();
-            let max_z = transforms.z.inverse(bounds.max_z).unwrap();
-            [min_x, min_y, min_z, max_x, max_y, max_z]
-        });
+        let bounds = match bounds {
+            BoundsSelection::All => None,
+            BoundsSelection::Within(bounds) => {
+                let min_x = transforms.x.inverse(bounds.min_x).unwrap();
+                let min_y = transforms.y.inverse(bounds.min_y).unwrap();
+                let min_z = transforms.z.inverse(bounds.min_z).unwrap();
+                let max_x = transforms.x.inverse(bounds.max_x).unwrap();
+                let max_y = transforms.y.inverse(bounds.max_y).unwrap();
+                let max_z = transforms.z.inverse(bounds.max_z).unwrap();
+                Some([min_x, min_y, min_z, max_x, max_y, max_z])
+            }
+        };
 
         let laz_vlr = self
             .laszip_vlr

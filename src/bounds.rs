@@ -114,15 +114,4 @@ impl Bounds {
         }
         true
     }
-
-    //     def ensure_3d(self, mins: np.ndarray, maxs: np.ndarray) -> "Bounds":
-    //         new_mins = np.zeros(3, dtype=np.float64)
-    //         new_maxs = np.zeros(3, dtype=np.float64)
-
-    //         new_mins[: len(self.mins)] = self.mins[:]
-    //         new_mins[len(self.mins) :] = mins[len(self.mins) :]
-    //         new_maxs[: len(self.maxs)] = self.maxs[:]
-    //         new_maxs[len(self.maxs) :] = maxs[len(self.maxs) :]
-
-    //         return Bounds(new_mins, new_maxs)
 }

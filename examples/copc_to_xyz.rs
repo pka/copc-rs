@@ -1,4 +1,4 @@
-use copc_rs::{CopcReader, LodSelection};
+use copc_rs::{BoundsSelection, CopcReader, LodSelection};
 use std::env;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
@@ -14,7 +14,7 @@ fn main() -> laz::Result<()> {
     println!("Writing {:?}", &dest);
     let mut file = BufWriter::new(File::create(dest)?);
 
-    for point in copc_reader.points(LodSelection::Level(0), None)? {
+    for point in copc_reader.points(LodSelection::Level(0), BoundsSelection::All)? {
         writeln!(&mut file, "{} {} {}", point.x, point.y, point.z)?;
     }
 

@@ -2,6 +2,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use std::fmt;
 use std::io::Read;
 
+/// LAS Variable Length Records
 pub struct Vlr {
     user_id: [u8; 16],
     pub(crate) record_id: u16,

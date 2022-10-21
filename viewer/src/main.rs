@@ -36,7 +36,7 @@ use bevy::{
 };
 use bytemuck::{cast_slice, Pod, Zeroable};
 
-use copc_rs::{CopcReader, LodSelection};
+use copc_rs::{BoundsSelection, CopcReader, LodSelection};
 use std::fs::File;
 use std::io::BufReader;
 
@@ -99,7 +99,7 @@ fn read_copc(lazfn: &str) -> Quads {
     let mut bboxmax = Vec3::new(f32::MIN, f32::MIN, f32::MIN);
 
     reader
-        .points(LodSelection::Level(0), None)
+        .points(LodSelection::Level(0), BoundsSelection::All)
         .unwrap()
         .for_each(|point| {
             // dbg!(&point);
