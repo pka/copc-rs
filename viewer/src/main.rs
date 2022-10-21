@@ -40,7 +40,6 @@ use copc_rs::{BoundsSelection, CopcReader, LodSelection};
 use std::fs::File;
 use std::io::BufReader;
 
-// Viewer based on https://github.com/superdump/bevy-vertex-pulling
 fn main() {
     App::new()
         .insert_resource(WindowDescriptor {

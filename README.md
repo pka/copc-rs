@@ -16,3 +16,8 @@ for point in copc_reader.points(LodSelection::Level(0), BoundsSelection::All)?.t
     println!("Point coordinates: ({}, {}, {})", point.x, point.y, point.z);
 }
 ```
+
+
+## Credits
+
+This library depends heavily on the work of Thomas Montaigu (@tmontaigu) and Pete Gadomski (@gadomski).
