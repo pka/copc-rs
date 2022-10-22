@@ -284,7 +284,6 @@ impl<'a, R: Read + Seek + Send> Iterator for PointIter<'a, R> {
         if self.total_points_left == 0 {
             return None;
         }
-        let mut raw_point = las::raw::Point::default();
         let mut in_bounds = false;
         while !in_bounds {
             if self.node_points_left == 0 {
@@ -298,7 +297,7 @@ impl<'a, R: Read + Seek + Send> Iterator for PointIter<'a, R> {
             self.decompressor
                 .decompress_one(self.point.as_mut_slice())
                 .unwrap();
-            raw_point =
+            let raw_point =
                 las::raw::Point::read_from(self.point.as_slice(), &self.point_format).unwrap();
             self.node_points_left -= 1;
             self.total_points_left -= 1;
@@ -310,10 +309,13 @@ impl<'a, R: Read + Seek + Send> Iterator for PointIter<'a, R> {
             } else {
                 in_bounds = true;
             }
-        }
-        let point = las::point::Point::new(raw_point, &self.transforms);
 
-        Some(point)
+            if in_bounds {
+                let point = las::point::Point::new(raw_point, &self.transforms);
+                return Some(point);
+            }
+        }
+        None
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

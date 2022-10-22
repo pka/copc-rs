@@ -185,7 +185,6 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
         Ok(())
     }
 
-    #[inline(always)]
     fn reset_for_new_chunk(&mut self) {
         self.chunk_points_read = 0;
         self.record_decompressor.reset();
