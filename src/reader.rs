@@ -286,7 +286,7 @@ impl<'a, R: Read + Seek + Send> Iterator for PointIter<'a, R> {
         }
         let mut in_bounds = false;
         while !in_bounds {
-            if self.node_points_left == 0 {
+            while self.node_points_left == 0 {
                 if let Some(node) = self.nodes.pop() {
                     self.decompressor.source_seek(node.entry.offset).unwrap();
                     self.node_points_left = node.entry.point_count as usize;
