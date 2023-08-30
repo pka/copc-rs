@@ -17,6 +17,11 @@ for point in copc_reader.points(LodSelection::Level(0), BoundsSelection::All)?.t
 }
 ```
 
+Run an example:
+```
+cargo run --example copc_http
+```
+
 
 ## Credits
 

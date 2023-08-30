@@ -23,3 +23,7 @@ exclude = [
 byteorder = "1.4.3"
 las = "0.7.7"
 laz = "0.6.1"
+
+[dev-dependencies]
+http-range-client = { git = "https://github.com/pka/http-range-client", branch="seek-read", features = ["reqwest-sync", "logging"] }
+env_logger = "0.10.0"
