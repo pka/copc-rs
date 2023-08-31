@@ -4,10 +4,9 @@ default-members = ["."]
 
 [package]
 name = "copc-rs"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Pirmin Kalberer <pka@sourcepole.ch>"]
-edition = "2018"
-resolver = "2"
+edition = "2021"
 
 description = "Cloud Optimized Point Cloud (COPC) reader."
 homepage = "https://github.com/pka/copc-rs"
@@ -15,6 +14,7 @@ repository = "https://github.com/pka/copc-rs"
 readme = "README.md"
 license = "MIT/Apache-2.0"
 keywords = ["lidar", "pointcloud", "copc", "las", "geo"]
+categories = ["science::geo", "rendering::data-formats"]
 exclude = [
     "tests/data",    
 ]
@@ -25,5 +25,5 @@ las = "0.8.1"
 laz = "0.8.2"
 
 [dev-dependencies]
-http-range-client = { git = "https://github.com/pka/http-range-client", branch="seek-read", features = ["reqwest-sync", "logging"] }
+http-range-client = "0.7.0"
 env_logger = "0.10.0"
