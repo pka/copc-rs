@@ -22,8 +22,7 @@ impl Vlr {
         let mut description = [0u8; 32];
         src.read_exact(&mut description)?;
 
-        let mut data = Vec::<u8>::new();
-        data.resize(record_length as usize, 0);
+        let mut data = vec![0; record_length as usize];
         src.read_exact(&mut data)?;
 
         Ok(Self {

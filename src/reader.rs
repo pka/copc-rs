@@ -1,11 +1,10 @@
 //! COPC file reader.
 
-use crate::bounds::Bounds;
 use crate::copc::{CopcInfo, Entry, HierarchyPage, OctreeNode, VoxelKey};
 use crate::decompressor::LasZipDecompressor;
 use crate::header::Header;
 use crate::vlr::Vlr;
-use las::{Transform, Vector};
+use las::{Bounds, Transform, Vector};
 use laz::LazVlr;
 use std::collections::HashMap;
 use std::io::{Cursor, Read, Seek, SeekFrom};
@@ -132,14 +131,18 @@ impl<R: Read + Seek + Send> CopcReader<R> {
         };
 
         let info = &self.copc_info;
-        let root_bounds = Bounds::new(
-            info.center_x - info.halfsize,
-            info.center_y - info.halfsize,
-            info.center_z - info.halfsize,
-            info.center_x + info.halfsize,
-            info.center_y + info.halfsize,
-            info.center_z + info.halfsize,
-        );
+        let root_bounds = Bounds {
+            min: Vector {
+                x: info.center_x - info.halfsize,
+                y: info.center_y - info.halfsize,
+                z: info.center_z - info.halfsize,
+            },
+            max: Vector {
+                x: info.center_x + info.halfsize,
+                y: info.center_y + info.halfsize,
+                z: info.center_z + info.halfsize,
+            },
+        };
 
         let mut root_node = OctreeNode::new();
         root_node.entry.key.level = 0;
@@ -159,7 +162,7 @@ impl<R: Read + Seek + Send> CopcReader<R> {
             current_node.bounds = current_node.entry.key.bounds(&root_bounds);
 
             if let BoundsSelection::Within(bounds) = query_bounds {
-                if !current_node.bounds.intersects(&bounds) {
+                if !bound_intersect(&current_node.bounds, bounds) {
                     continue;
                 }
             }
@@ -231,12 +234,12 @@ impl<R: Read + Seek + Send> CopcReader<R> {
         let bounds = match bounds {
             BoundsSelection::All => None,
             BoundsSelection::Within(bounds) => {
-                let min_x = transforms.x.inverse(bounds.min_x).unwrap();
-                let min_y = transforms.y.inverse(bounds.min_y).unwrap();
-                let min_z = transforms.z.inverse(bounds.min_z).unwrap();
-                let max_x = transforms.x.inverse(bounds.max_x).unwrap();
-                let max_y = transforms.y.inverse(bounds.max_y).unwrap();
-                let max_z = transforms.z.inverse(bounds.max_z).unwrap();
+                let min_x = transforms.x.inverse(bounds.min.x).unwrap();
+                let min_y = transforms.y.inverse(bounds.min.y).unwrap();
+                let min_z = transforms.z.inverse(bounds.min.z).unwrap();
+                let max_x = transforms.x.inverse(bounds.max.x).unwrap();
+                let max_y = transforms.y.inverse(bounds.max.y).unwrap();
+                let max_z = transforms.z.inverse(bounds.max.z).unwrap();
                 Some([min_x, min_y, min_z, max_x, max_y, max_z])
             }
         };
@@ -263,6 +266,28 @@ impl<R: Read + Seek + Send> CopcReader<R> {
             total_points_left,
         })
     }
+}
+
+fn bound_intersect(a: &Bounds, r: &Bounds) -> bool {
+    if a.max.x < r.min.x {
+        return false;
+    }
+    if a.max.y < r.min.y {
+        return false;
+    }
+    if a.max.z < r.min.z {
+        return false;
+    }
+    if a.min.x > r.max.x {
+        return false;
+    }
+    if a.min.y > r.max.y {
+        return false;
+    }
+    if a.min.z > r.max.z {
+        return false;
+    }
+    true
 }
 
 /// LasZip point iterator

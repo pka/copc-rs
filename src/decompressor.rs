@@ -22,13 +22,13 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
         let (chunk_table, data_start) = if let Some(data_start) = data_start {
             (None, data_start)
         } else {
-            let chunk_table = match ChunkTable::read_from(&mut source, &vlr) {
+            let chunk_table = match ChunkTable::read_from(&mut source, vlr) {
                 Ok(chunk_table) => Some(chunk_table),
                 Err(e) => {
                     return Err(e);
                 }
             };
-            let data_start = source.seek(SeekFrom::Current(0))?;
+            let data_start = source.stream_position()?;
             (chunk_table, data_start)
         };
 
@@ -51,13 +51,13 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
     /// - The buffer should have at least enough byte to store the decompressed data
     /// - The data is written in the buffer exactly as it would have been in a LAS File
     ///   in Little Endian order,
-    pub fn decompress_one(&mut self, mut out: &mut [u8]) -> std::io::Result<()> {
+    pub fn decompress_one(&mut self, out: &mut [u8]) -> std::io::Result<()> {
         if self.chunk_points_read == self.num_points_in_chunk {
             self.reset_for_new_chunk();
             self.current_chunk += 1;
         }
 
-        self.record_decompressor.decompress_next(&mut out)?;
+        self.record_decompressor.decompress_next(out)?;
         self.chunk_points_read += 1;
 
         if self.chunk_points_read == 1 {
@@ -126,7 +126,7 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
         };
 
         if let Some((chunk_of_point, start_of_chunk)) = chunk_info {
-            self.current_chunk = chunk_of_point as usize;
+            self.current_chunk = chunk_of_point;
             let delta = point_idx % chunk_table[self.current_chunk].point_count;
             if chunk_of_point == (chunk_table.len() - 1) {
                 // the requested point fall into the last chunk,
@@ -153,10 +153,7 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
 
                 for _i in 0..delta {
                     self.decompress_one(&mut tmp_out)?;
-                    let current_pos = self
-                        .record_decompressor
-                        .get_mut()
-                        .seek(SeekFrom::Current(0))?;
+                    let current_pos = self.record_decompressor.get_mut().stream_position()?;
 
                     if current_pos >= offset_to_chunk_table {
                         self.record_decompressor.get_mut().seek(SeekFrom::End(0))?;
@@ -190,7 +187,7 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
         self.record_decompressor.reset();
         // we can safely unwrap here, as set_field would have failed in the ::new()
         self.record_decompressor
-            .set_fields_from(&self.vlr.items())
+            .set_fields_from(self.vlr.items())
             .unwrap();
     }
 }

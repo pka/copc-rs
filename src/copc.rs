@@ -1,7 +1,7 @@
 //! COPC VLR.
 
-use crate::bounds::Bounds;
 use byteorder::{LittleEndian, ReadBytesExt};
+use las::{Bounds, Vector};
 use std::hash::Hash;
 use std::io::Read;
 
@@ -34,17 +34,18 @@ pub struct CopcInfo {
 impl CopcInfo {
     /// Reads VLR data from a `Read`.
     pub fn read_from<R: Read>(mut read: R) -> std::io::Result<Self> {
-        let mut data = CopcInfo::default();
-        data.center_x = read.read_f64::<LittleEndian>()?;
-        data.center_y = read.read_f64::<LittleEndian>()?;
-        data.center_z = read.read_f64::<LittleEndian>()?;
-        data.halfsize = read.read_f64::<LittleEndian>()?;
-        data.spacing = read.read_f64::<LittleEndian>()?;
-        data.root_hier_offset = read.read_u64::<LittleEndian>()?;
-        data.root_hier_size = read.read_u64::<LittleEndian>()?;
-        data.gpstime_minimum = read.read_f64::<LittleEndian>()?;
-        data.gpstime_maximum = read.read_f64::<LittleEndian>()?;
-        Ok(data)
+        Ok(CopcInfo {
+            center_x: read.read_f64::<LittleEndian>()?,
+            center_y: read.read_f64::<LittleEndian>()?,
+            center_z: read.read_f64::<LittleEndian>()?,
+            halfsize: read.read_f64::<LittleEndian>()?,
+            spacing: read.read_f64::<LittleEndian>()?,
+            root_hier_offset: read.read_u64::<LittleEndian>()?,
+            root_hier_size: read.read_u64::<LittleEndian>()?,
+            gpstime_minimum: read.read_f64::<LittleEndian>()?,
+            gpstime_maximum: read.read_f64::<LittleEndian>()?,
+            _reserved: [0; 11],
+        })
     }
 }
 
@@ -77,20 +78,20 @@ impl Default for VoxelKey {
 impl VoxelKey {
     /// Reads VoxelKey from a `Read`.
     pub fn read_from<R: Read>(read: &mut R) -> std::io::Result<Self> {
-        let mut data = VoxelKey::default();
-        data.level = read.read_i32::<LittleEndian>()?;
-        data.x = read.read_i32::<LittleEndian>()?;
-        data.y = read.read_i32::<LittleEndian>()?;
-        data.z = read.read_i32::<LittleEndian>()?;
-        Ok(data)
+        Ok(VoxelKey {
+            level: read.read_i32::<LittleEndian>()?,
+            x: read.read_i32::<LittleEndian>()?,
+            y: read.read_i32::<LittleEndian>()?,
+            z: read.read_i32::<LittleEndian>()?,
+        })
     }
     pub fn child(&self, dir: i32) -> VoxelKey {
-        let mut key = VoxelKey::default();
-        key.level = self.level + 1;
-        key.x = (self.x << 1) | (dir & 0x1);
-        key.y = (self.y << 1) | ((dir >> 1) & 0x1);
-        key.z = (self.z << 1) | ((dir >> 2) & 0x1);
-        key
+        VoxelKey {
+            level: self.level + 1,
+            x: (self.x << 1) | (dir & 0x1),
+            y: (self.y << 1) | ((dir >> 1) & 0x1),
+            z: (self.z << 1) | ((dir >> 2) & 0x1),
+        }
     }
     pub fn childs(&self) -> Vec<VoxelKey> {
         (0..8).map(|i| self.child(i)).collect()
@@ -98,14 +99,20 @@ impl VoxelKey {
     pub fn bounds(&self, root_bounds: &Bounds) -> Bounds {
         // In an octree every cell is a cube
         let side_size =
-            (root_bounds.max_x - root_bounds.min_x) / 2_u32.pow(self.level as u32) as f64;
-        let min_x = root_bounds.min_x + self.x as f64 * side_size;
-        let min_y = root_bounds.min_y + self.y as f64 * side_size;
-        let min_z = root_bounds.min_z + self.z as f64 * side_size;
-        let max_x = root_bounds.min_x + (self.x + 1) as f64 * side_size;
-        let max_y = root_bounds.min_y + (self.y + 1) as f64 * side_size;
-        let max_z = root_bounds.min_z + (self.z + 1) as f64 * side_size;
-        Bounds::new(min_x, min_y, min_z, max_x, max_y, max_z)
+            (root_bounds.max.x - root_bounds.min.x) / 2_u32.pow(self.level as u32) as f64;
+
+        Bounds {
+            min: Vector {
+                x: root_bounds.min.x + self.x as f64 * side_size,
+                y: root_bounds.min.y + self.y as f64 * side_size,
+                z: root_bounds.min.z + self.z as f64 * side_size,
+            },
+            max: Vector {
+                x: root_bounds.min.x + (self.x + 1) as f64 * side_size,
+                y: root_bounds.min.y + (self.y + 1) as f64 * side_size,
+                z: root_bounds.min.z + (self.z + 1) as f64 * side_size,
+            },
+        }
     }
 }
 
@@ -136,12 +143,12 @@ pub struct Entry {
 impl Entry {
     /// Reads hierarchy entry from a `Read`.
     pub fn read_from<R: Read>(read: &mut R) -> std::io::Result<Self> {
-        let mut data = Entry::default();
-        data.key = VoxelKey::read_from(read)?;
-        data.offset = read.read_u64::<LittleEndian>()?;
-        data.byte_size = read.read_i32::<LittleEndian>()?;
-        data.point_count = read.read_i32::<LittleEndian>()?;
-        Ok(data)
+        Ok(Entry {
+            key: VoxelKey::read_from(read)?,
+            offset: read.read_u64::<LittleEndian>()?,
+            byte_size: read.read_i32::<LittleEndian>()?,
+            point_count: read.read_i32::<LittleEndian>()?,
+        })
     }
 }
 
@@ -184,7 +191,10 @@ impl OctreeNode {
     pub fn new() -> Self {
         OctreeNode {
             entry: Entry::default(),
-            bounds: Bounds::new(0., 0., 0., 0., 0., 0.),
+            bounds: Bounds {
+                min: Vector::default(),
+                max: Vector::default(),
+            },
             childs: Vec::new(),
         }
     }

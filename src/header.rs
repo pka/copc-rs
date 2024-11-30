@@ -3,7 +3,7 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 use las::feature::{Evlrs, LargeFiles, Waveforms};
 use las::raw::LASF;
-use las::Version;
+use las::{Bounds, Error, Vector, Version};
 use std::io::Read;
 
 /// A las header.
@@ -174,17 +174,7 @@ pub struct Header {
 
     /// The max and min data fields are the actual unscaled extents of the LAS point file data,
     /// specified in the coordinate system of the LAS data.
-    pub max_x: f64,
-    #[allow(missing_docs)]
-    pub min_x: f64,
-    #[allow(missing_docs)]
-    pub max_y: f64,
-    #[allow(missing_docs)]
-    pub min_y: f64,
-    #[allow(missing_docs)]
-    pub max_z: f64,
-    #[allow(missing_docs)]
-    pub min_z: f64,
+    pub bounds: Bounds,
 
     /// **las 1.3 and 1.4**: This value provides the offset, in bytes, from the beginning of the
     /// LAS file to the first byte of the Waveform Data Package Record.
@@ -240,7 +230,7 @@ impl Header {
     ///
     /// - The file signature is not exactly "LASF".
     /// - The point data format is not recognized. Note that version mismatches *are* allowed (e.g.
-    /// color points for las 1.1).
+    ///     color points for las 1.1).
     /// - The point data record length is less than the minimum length of the point data format.
     ///
     /// # Examples
@@ -252,12 +242,10 @@ impl Header {
     /// let header = Header::read_from(&mut file).unwrap();
     /// ```
     pub fn read_from<R: Read>(read: &mut R) -> las::Result<Header> {
-        use las::header::Error;
-
         let mut header = Header::default();
         read.read_exact(&mut header.file_signature)?;
         if header.file_signature != LASF {
-            return Err(Error::FileSignature(header.file_signature).into());
+            return Err(Error::InvalidFileSignature(header.file_signature));
         }
         header.file_source_id = read.read_u16::<LittleEndian>()?;
         header.global_encoding = read.read_u16::<LittleEndian>()?;
@@ -284,12 +272,18 @@ impl Header {
         header.x_offset = read.read_f64::<LittleEndian>()?;
         header.y_offset = read.read_f64::<LittleEndian>()?;
         header.z_offset = read.read_f64::<LittleEndian>()?;
-        header.max_x = read.read_f64::<LittleEndian>()?;
-        header.min_x = read.read_f64::<LittleEndian>()?;
-        header.max_y = read.read_f64::<LittleEndian>()?;
-        header.min_y = read.read_f64::<LittleEndian>()?;
-        header.max_z = read.read_f64::<LittleEndian>()?;
-        header.min_z = read.read_f64::<LittleEndian>()?;
+        header.bounds = Bounds {
+            min: Vector {
+                x: read.read_f64::<LittleEndian>()?,
+                y: read.read_f64::<LittleEndian>()?,
+                z: read.read_f64::<LittleEndian>()?,
+            },
+            max: Vector {
+                x: read.read_f64::<LittleEndian>()?,
+                y: read.read_f64::<LittleEndian>()?,
+                z: read.read_f64::<LittleEndian>()?,
+            },
+        };
         header.start_of_waveform_data_packet_record = if header.version.supports::<Waveforms>() {
             some_or_none_if_zero(read.read_u64::<LittleEndian>()?)
         } else {
@@ -333,7 +327,7 @@ impl Default for Header {
             file_source_id: 0,
             global_encoding: 0,
             guid: [0; 16],
-            version: version,
+            version,
             system_identifier: [0; 32],
             generating_software: [0; 32],
             file_creation_day_of_year: 0,
@@ -351,12 +345,18 @@ impl Default for Header {
             x_offset: 0.,
             y_offset: 0.,
             z_offset: 0.,
-            max_x: 0.,
-            min_x: 0.,
-            max_y: 0.,
-            min_y: 0.,
-            max_z: 0.,
-            min_z: 0.,
+            bounds: Bounds {
+                min: Vector {
+                    x: 0.,
+                    y: 0.,
+                    z: 0.,
+                },
+                max: Vector {
+                    x: 0.,
+                    y: 0.,
+                    z: 0.,
+                },
+            },
             start_of_waveform_data_packet_record: None,
             evlr: None,
             large_file: None,
