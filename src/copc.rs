@@ -6,7 +6,7 @@ use std::hash::Hash;
 use std::io::Read;
 
 /// COPC Info VLR data.
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 pub struct CopcInfo {
     /// Actual (unscaled) X coordinate of center of octree
     pub center_x: f64,

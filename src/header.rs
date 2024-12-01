@@ -346,16 +346,8 @@ impl Default for Header {
             y_offset: 0.,
             z_offset: 0.,
             bounds: Bounds {
-                min: Vector {
-                    x: 0.,
-                    y: 0.,
-                    z: 0.,
-                },
-                max: Vector {
-                    x: 0.,
-                    y: 0.,
-                    z: 0.,
-                },
+                min: Vector::default(),
+                max: Vector::default(),
             },
             start_of_waveform_data_packet_record: None,
             evlr: None,
