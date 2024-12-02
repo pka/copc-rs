@@ -65,7 +65,7 @@ impl CopcReader<BufReader<File>> {
 
 impl<R: Read + Seek + Send> CopcReader<R> {
     /// Setup by reading LAS header and LasZip VRLs
-    fn open(mut src: R) -> Result<Self> {
+    pub fn open(mut src: R) -> Result<Self> {
         let las_header = Header::read_from(&mut src).unwrap();
         let copc_vlr = Vlr::read_from(&mut src, false).unwrap();
         if user_id_as_trimmed_string(&copc_vlr.user_id) != "copc" || copc_vlr.record_id != 1 {
