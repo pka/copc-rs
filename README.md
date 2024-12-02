@@ -10,19 +10,13 @@ copc-rs is a library for reading Cloud Optimized Point Cloud ([COPC](https://cop
 ## Usage example
 
 ```rust
-let laz_file = BufReader::new(File::open("autzen-classified.copc.laz")?);
-let mut copc_reader = CopcReader::open(laz_file)?;
+let mut copc_reader = CopcReader::from_path("autzen-classified.copc.laz")?;
 for point in copc_reader.points(LodSelection::Level(0), BoundsSelection::All)?.take(5) {
     println!("Point coordinates: ({}, {}, {})", point.x, point.y, point.z);
 }
 ```
 
-Run an example:
-```
-cargo run --example copc_http
-```
-
-
 ## Credits
+This fork simplifies the work of Pirmin Kalberer, owner of the forked repo
 
-This library depends heavily on the work of Thomas Montaigu (@tmontaigu) and Pete Gadomski (@gadomski).
+This library depends heavily on the work of Thomas Montaigu (@tmontaigu) and Pete Gadomski (@gadomski), the authors of the laz and las crates.
