@@ -93,7 +93,7 @@ impl VoxelKey {
             z: (self.z << 1) | ((dir >> 2) & 0x1),
         }
     }
-    pub fn childs(&self) -> Vec<VoxelKey> {
+    pub fn children(&self) -> Vec<VoxelKey> {
         (0..8).map(|i| self.child(i)).collect()
     }
     pub fn bounds(&self, root_bounds: &Bounds) -> Bounds {
@@ -182,9 +182,9 @@ pub(crate) struct OctreeNode {
     pub entry: Entry,
     /// The bounds this node represents, in file's coordinate
     pub bounds: Bounds,
-    /// Childs of this node, since its an octree, there
-    /// are at most 8 childs
-    pub childs: Vec<OctreeNode>,
+    /// Children of this node, since its an octree, there
+    /// are at most 8 children
+    pub children: Vec<OctreeNode>,
 }
 
 impl OctreeNode {
@@ -195,7 +195,7 @@ impl OctreeNode {
                 min: Vector::default(),
                 max: Vector::default(),
             },
-            childs: Vec::new(),
+            children: Vec::new(),
         }
     }
 }

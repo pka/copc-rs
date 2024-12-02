@@ -2,7 +2,6 @@
 
 use crate::copc::{CopcInfo, Entry, HierarchyPage, OctreeNode, VoxelKey};
 use crate::decompressor::LasZipDecompressor;
-//use crate::vlr::Vlr;
 use las::raw::{Header, Vlr};
 use las::{Bounds, Error, Result, Transform, Vector};
 use laz::LazVlr;
@@ -10,6 +9,8 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
 use std::path::Path;
+
+const COPC: [u8; 4] = [67, 79, 80, 67];
 
 /// COPC file reader
 pub struct CopcReader<R> {
@@ -54,12 +55,6 @@ pub enum BoundsSelection {
     Within(Bounds),
 }
 
-fn user_id_as_trimmed_string(bytes: &[u8; 16]) -> String {
-    String::from_utf8_lossy(bytes)
-        .trim_end_matches(|c| c as u8 == 0)
-        .to_string()
-}
-
 impl CopcReader<BufReader<File>> {
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
         File::open(path)
@@ -70,15 +65,13 @@ impl CopcReader<BufReader<File>> {
 
 impl<R: Read + Seek + Send> CopcReader<R> {
     /// Setup by reading LAS header and LasZip VRLs
-    pub fn open(mut src: R) -> Result<Self> {
+    fn open(mut src: R) -> Result<Self> {
         let las_header = Header::read_from(&mut src).unwrap();
         let copc_vlr = Vlr::read_from(&mut src, false).unwrap();
         if user_id_as_trimmed_string(&copc_vlr.user_id) != "copc" || copc_vlr.record_id != 1 {
-            panic!("format error");
+            return Err(Error::InvalidFileSignature(COPC));
         }
         let copc_info = CopcInfo::read_from(Cursor::new(copc_vlr.data))?;
-        // dbg!(&copc_info);
-        // dbg!(&las_header);
 
         let mut reader = CopcReader {
             src,
@@ -205,10 +198,10 @@ impl<R: Read + Seek + Send> CopcReader<R> {
                 current_node.entry.byte_size = entry.byte_size;
                 current_node.entry.point_count = entry.point_count;
 
-                for child_key in current_node.entry.key.childs() {
+                for child_key in current_node.entry.key.children() {
                     let mut child_node = OctreeNode::new();
                     child_node.entry.key = child_key;
-                    current_node.childs.push(child_node.clone());
+                    current_node.children.push(child_node.clone());
                     nodes_to_load.push(child_node);
                 }
             }
@@ -287,26 +280,32 @@ impl<R: Read + Seek + Send> CopcReader<R> {
     }
 }
 
-fn bound_intersect(a: &Bounds, r: &Bounds) -> bool {
-    if a.max.x < r.min.x {
+fn bound_intersect(a: &Bounds, b: &Bounds) -> bool {
+    if a.max.x < b.min.x {
         return false;
     }
-    if a.max.y < r.min.y {
+    if a.max.y < b.min.y {
         return false;
     }
-    if a.max.z < r.min.z {
+    if a.max.z < b.min.z {
         return false;
     }
-    if a.min.x > r.max.x {
+    if a.min.x > b.max.x {
         return false;
     }
-    if a.min.y > r.max.y {
+    if a.min.y > b.max.y {
         return false;
     }
-    if a.min.z > r.max.z {
+    if a.min.z > b.max.z {
         return false;
     }
     true
+}
+
+fn user_id_as_trimmed_string(bytes: &[u8; 16]) -> String {
+    String::from_utf8_lossy(bytes)
+        .trim_end_matches(|c| c as u8 == 0)
+        .to_string()
 }
 
 /// LasZip point iterator

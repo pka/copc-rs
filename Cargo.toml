@@ -1,6 +1,6 @@
 [package]
 name = "copc-rs"
-version = "0.3.0"
+version = "1.0.0"
 authors = ["Pirmin Kalberer <pka@sourcepole.ch>"]
 edition = "2021"
 

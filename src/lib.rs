@@ -23,4 +23,5 @@ mod copc;
 mod decompressor;
 mod reader;
 
+pub use las::{Bounds, Vector};
 pub use reader::*;
