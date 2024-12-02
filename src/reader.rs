@@ -2,12 +2,14 @@
 
 use crate::copc::{CopcInfo, Entry, HierarchyPage, OctreeNode, VoxelKey};
 use crate::decompressor::LasZipDecompressor;
-use crate::header::Header;
-use crate::vlr::Vlr;
-use las::{Bounds, Transform, Vector};
+//use crate::vlr::Vlr;
+use las::raw::{Header, Vlr};
+use las::{Bounds, Error, Result, Transform, Vector};
 use laz::LazVlr;
 use std::collections::HashMap;
-use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::fs::File;
+use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
+use std::path::Path;
 
 /// COPC file reader
 pub struct CopcReader<R> {
@@ -52,12 +54,26 @@ pub enum BoundsSelection {
     Within(Bounds),
 }
 
+fn user_id_as_trimmed_string(bytes: &[u8; 16]) -> String {
+    String::from_utf8_lossy(bytes)
+        .trim_end_matches(|c| c as u8 == 0)
+        .to_string()
+}
+
+impl CopcReader<BufReader<File>> {
+    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
+        File::open(path)
+            .map_err(Error::from)
+            .and_then(|file| CopcReader::open(BufReader::new(file)))
+    }
+}
+
 impl<R: Read + Seek + Send> CopcReader<R> {
     /// Setup by reading LAS header and LasZip VRLs
-    pub fn open(mut src: R) -> std::io::Result<Self> {
+    pub fn open(mut src: R) -> Result<Self> {
         let las_header = Header::read_from(&mut src).unwrap();
-        let copc_vlr = Vlr::read_from(&mut src).unwrap();
-        if copc_vlr.user_id().as_str() != "copc" || copc_vlr.record_id != 1 {
+        let copc_vlr = Vlr::read_from(&mut src, false).unwrap();
+        if user_id_as_trimmed_string(&copc_vlr.user_id) != "copc" || copc_vlr.record_id != 1 {
             panic!("format error");
         }
         let copc_info = CopcInfo::read_from(Cursor::new(copc_vlr.data))?;
@@ -74,9 +90,12 @@ impl<R: Read + Seek + Send> CopcReader<R> {
         };
 
         for _i in 0..reader.las_header.number_of_variable_length_records - 1 {
-            let vlr = Vlr::read_from(&mut reader.src).unwrap();
+            let vlr = Vlr::read_from(&mut reader.src, false).unwrap();
             // dbg!(&vlr);
-            match (vlr.user_id().as_str(), vlr.record_id) {
+            match (
+                user_id_as_trimmed_string(&vlr.user_id).as_str(),
+                vlr.record_id,
+            ) {
                 ("laszip encoded", 22204) => {
                     reader.laszip_vlr = Some(LazVlr::read_from(vlr.data.as_slice()).unwrap())
                 }
