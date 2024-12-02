@@ -2,6 +2,7 @@
 
 use crate::copc::{CopcInfo, Entry, HierarchyPage, OctreeNode, VoxelKey};
 use crate::decompressor::LasZipDecompressor;
+use crate::COPC;
 use las::raw::{Header, Vlr};
 use las::{Bounds, Error, Result, Transform, Vector};
 use laz::LazVlr;
@@ -9,8 +10,6 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
 use std::path::Path;
-
-const COPC: [u8; 4] = [67, 79, 80, 67];
 
 /// COPC file reader
 pub struct CopcReader<R> {
@@ -64,7 +63,7 @@ impl CopcReader<BufReader<File>> {
 }
 
 impl<R: Read + Seek + Send> CopcReader<R> {
-    /// Setup by reading LAS header and LasZip VRLs
+    /// Setup by reading LAS header and LasZip VLRs
     pub fn open(mut src: R) -> Result<Self> {
         let las_header = Header::read_from(&mut src).unwrap();
         let copc_vlr = Vlr::read_from(&mut src, false).unwrap();
@@ -327,8 +326,8 @@ impl<'a, R: Read + Seek + Send> Iterator for PointIter<'a, R> {
         if self.total_points_left == 0 {
             return None;
         }
-        let mut in_bounds = false;
-        while !in_bounds {
+        let mut in_bounds;
+        loop {
             while self.node_points_left == 0 {
                 if let Some(node) = self.nodes.pop() {
                     self.decompressor.source_seek(node.entry.offset).unwrap();
@@ -358,7 +357,6 @@ impl<'a, R: Read + Seek + Send> Iterator for PointIter<'a, R> {
                 return Some(point);
             }
         }
-        None
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

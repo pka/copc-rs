@@ -172,7 +172,7 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
                 }
             }
         } else {
-            // the requested point it out of bounds (ie higher than the number of
+            // the requested point is out of bounds (ie higher than the number of
             // points compressed)
 
             // Seek to the end so that the next call to decompress causes en error
