@@ -10,9 +10,31 @@ copc-rs is a library for reading Cloud Optimized Point Cloud ([COPC](https://cop
 ## Usage example
 
 ```rust
-let mut copc_reader = CopcReader::from_path("autzen-classified.copc.laz")?;
-for point in copc_reader.points(LodSelection::Level(0), BoundsSelection::All)?.take(5) {
-    println!("Point coordinates: ({}, {}, {})", point.x, point.y, point.z);
+use copc_rs::{Bounds, BoundsSelection, CopcReader, LodSelection, Vector};
+
+fn main() {
+    let path = "../aydatlidar/1.copc.laz";
+    let mut las_reader = CopcReader::from_path(path).unwrap();
+
+    let bounds = Bounds {
+        min: Vector {
+            x: 698_100.,
+            y: 6_508_100.,
+            z: 0.,
+        },
+        max: Vector {
+            x: 698_230.,
+            y: 6_508_189.,
+            z: 2_000.,
+        },
+    };
+
+    for point in las_reader
+        .points(LodSelection::All, BoundsSelection::Within(bounds))
+        .unwrap()
+    {
+        // do something with the points
+    }
 }
 ```
 
