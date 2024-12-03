@@ -4,7 +4,7 @@ use laz::LasZipError::MissingChunkTable;
 use std::io::{Read, Seek, SeekFrom};
 
 /// LasZip decompressor.
-pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
+pub struct CopcDecompressor<'a, R: Read + Seek + 'a> {
     vlr: &'a LazVlr,
     record_decompressor: Box<dyn RecordDecompressor<R> + Send + 'a>,
     data_start: u64,
@@ -15,7 +15,7 @@ pub struct LasZipDecompressor<'a, R: Read + Seek + 'a> {
 }
 
 // Variant of laz::LasZipDecompressor with optional ChunkTable reading
-impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
+impl<'a, R: Read + Seek + Send + 'a> CopcDecompressor<'a, R> {
     /// Creates a new instance from a data source of compressed points
     /// and the LazVlr describing the compressed data
     pub fn new(mut source: R, data_start: Option<u64>, vlr: &'a LazVlr) -> laz::Result<Self> {
@@ -192,7 +192,7 @@ impl<'a, R: Read + Seek + Send + 'a> LasZipDecompressor<'a, R> {
     }
 }
 
-impl<'a, R: Read + Seek + Send + 'a> laz::laszip::LazDecompressor for LasZipDecompressor<'a, R> {
+impl<'a, R: Read + Seek + Send + 'a> laz::laszip::LazDecompressor for CopcDecompressor<'a, R> {
     fn decompress_many(&mut self, points: &mut [u8]) -> laz::Result<()> {
         self.decompress_many(points)?;
         Ok(())

@@ -1,9 +1,9 @@
 //! COPC file reader.
 
 use crate::copc::{CopcInfo, Entry, HierarchyPage, OctreeNode, VoxelKey};
-use crate::decompressor::LasZipDecompressor;
+use crate::decompressor::CopcDecompressor;
 use crate::COPC;
-use las::raw::{Header, Vlr};
+use las::raw::{Header, Vlr, LASF};
 use las::{Bounds, Error, Result, Transform, Vector};
 use laz::LazVlr;
 use std::collections::HashMap;
@@ -16,42 +16,9 @@ pub struct CopcReader<R> {
     src: R,
     las_header: Header,
     copc_info: CopcInfo,
-    laszip_vlr: Option<LazVlr>,
-    projection_vlr: Option<Vlr>,
+    laszip_vlr: LazVlr,
     /// Entries of loaded hierarchy pages
     page_entries: HashMap<VoxelKey, Entry>,
-}
-
-/// Limits the octree levels to be queried in order to have
-/// a point cloud with the requested resolution.
-///
-/// resolution: Limits the octree levels to be queried in order
-/// to have a point cloud with the requested resolution.
-///
-/// - The unit is the one of the data.
-/// - If absent, the resulting cloud will be at the
-///   full resolution offered by the COPC source
-///
-/// level: The level of detail (LOD).
-///
-/// If absent, all LOD are going to be considered   
-pub enum LodSelection {
-    /// Full resolution (all LODs)
-    All,
-    /// requested resolution of point cloud
-    Resolution(f64),
-    /// only points that that are of the requested LOD will be returned.
-    Level(i32),
-    /// points for which the LOD is within the range will be returned.
-    LevelMinMax(i32, i32),
-}
-
-/// Select points within bounds
-pub enum BoundsSelection {
-    /// No bounds filter.
-    All,
-    /// Select points within bounds.
-    Within(Bounds),
 }
 
 impl CopcReader<BufReader<File>> {
@@ -66,40 +33,42 @@ impl<R: Read + Seek + Send> CopcReader<R> {
     /// Setup by reading LAS header and LasZip VLRs
     pub fn open(mut src: R) -> Result<Self> {
         let las_header = Header::read_from(&mut src).unwrap();
-        let copc_vlr = Vlr::read_from(&mut src, false).unwrap();
-        if user_id_as_trimmed_string(&copc_vlr.user_id) != "copc" || copc_vlr.record_id != 1 {
-            return Err(Error::InvalidFileSignature(COPC));
-        }
-        let copc_info = CopcInfo::read_from(Cursor::new(copc_vlr.data))?;
 
-        let mut reader = CopcReader {
-            src,
-            las_header,
-            copc_info,
-            laszip_vlr: None,
-            projection_vlr: None,
-            page_entries: HashMap::new(),
-        };
+        // read all VLRs and store the relevant ones
+        let mut copc_info = None;
+        let mut laszip_vlr = None;
+        for i in 0..las_header.number_of_variable_length_records {
+            let vlr = Vlr::read_from(&mut src, false).unwrap();
 
-        for _i in 0..reader.las_header.number_of_variable_length_records - 1 {
-            let vlr = Vlr::read_from(&mut reader.src, false).unwrap();
-            // dbg!(&vlr);
             match (
                 user_id_as_trimmed_string(&vlr.user_id).as_str(),
                 vlr.record_id,
+                i,
             ) {
-                ("laszip encoded", 22204) => {
-                    reader.laszip_vlr = Some(LazVlr::read_from(vlr.data.as_slice()).unwrap())
+                ("copc", 1, 0) => {
+                    copc_info = Some(CopcInfo::read_from(Cursor::new(vlr.data))?);
                 }
-                // ("copc", 1000) => reader.hierarchy_vlr = Some(vlr),
-                ("LASF_Projection", 2112) => reader.projection_vlr = Some(vlr),
-                (user_id, record_id) => {
+                ("laszip encoded", 22204, _) => {
+                    laszip_vlr = Some(LazVlr::read_from(vlr.data.as_slice()).unwrap());
+                }
+                _ => (),
+                /*
+                ("copc", 1000, _) => hierarchy_vlr = Some(vlr),
+                ("LASF_Projection", 2112, _) => projection_vlr = Some(vlr),
+                (user_id, record_id, _) => ({
                     eprintln!("Ignoring VLR {user_id}/{record_id}")
-                }
+                })
+                */
             }
         }
 
-        Ok(reader)
+        Ok(CopcReader {
+            src,
+            las_header,
+            copc_info: copc_info.ok_or(Error::InvalidFileSignature(COPC))?,
+            laszip_vlr: laszip_vlr.ok_or(Error::InvalidFileSignature(LASF))?,
+            page_entries: HashMap::new(),
+        })
     }
 
     /// LAS header
@@ -141,17 +110,16 @@ impl<R: Read + Seek + Send> CopcReader<R> {
             LodSelection::LevelMinMax(min, max) => (min, max),
         };
 
-        let info = &self.copc_info;
         let root_bounds = Bounds {
             min: Vector {
-                x: info.center_x - info.halfsize,
-                y: info.center_y - info.halfsize,
-                z: info.center_z - info.halfsize,
+                x: self.copc_info.center_x - self.copc_info.halfsize,
+                y: self.copc_info.center_y - self.copc_info.halfsize,
+                z: self.copc_info.center_z - self.copc_info.halfsize,
             },
             max: Vector {
-                x: info.center_x + info.halfsize,
-                y: info.center_y + info.halfsize,
-                z: info.center_z + info.halfsize,
+                x: self.copc_info.center_x + self.copc_info.halfsize,
+                y: self.copc_info.center_y + self.copc_info.halfsize,
+                z: self.copc_info.center_z + self.copc_info.halfsize,
             },
         };
 
@@ -172,17 +140,20 @@ impl<R: Read + Seek + Send> CopcReader<R> {
         while let Some(mut current_node) = nodes_to_load.pop() {
             current_node.bounds = current_node.entry.key.bounds(&root_bounds);
 
+            // this octree node does not overlap with the bounds of interest
             if let BoundsSelection::Within(bounds) = query_bounds {
                 if !bound_intersect(&current_node.bounds, bounds) {
                     continue;
                 }
             }
 
+            // bottom of tree reached
             if current_node.entry.key.level >= level_max {
                 continue;
             }
 
             let entry = self.page_entries.get(&current_node.entry.key);
+            // no entries i.e no node
             if entry.is_none() {
                 continue;
             }
@@ -255,11 +226,7 @@ impl<R: Read + Seek + Send> CopcReader<R> {
             }
         };
 
-        let laz_vlr = self
-            .laszip_vlr
-            .as_ref()
-            .expect("Expected a laszip VLR for laz file");
-        let decompressor = LasZipDecompressor::new(&mut self.src, Some(0), laz_vlr)?;
+        let decompressor = CopcDecompressor::new(&mut self.src, Some(0), &self.laszip_vlr)?;
 
         let point_format =
             las::point::Format::new(self.las_header.point_data_record_format).unwrap();
@@ -280,25 +247,12 @@ impl<R: Read + Seek + Send> CopcReader<R> {
 }
 
 fn bound_intersect(a: &Bounds, b: &Bounds) -> bool {
-    if a.max.x < b.min.x {
-        return false;
-    }
-    if a.max.y < b.min.y {
-        return false;
-    }
-    if a.max.z < b.min.z {
-        return false;
-    }
-    if a.min.x > b.max.x {
-        return false;
-    }
-    if a.min.y > b.max.y {
-        return false;
-    }
-    if a.min.z > b.max.z {
-        return false;
-    }
-    true
+    !(a.max.x < b.min.x
+        || a.max.y < b.min.y
+        || a.max.z < b.min.z
+        || a.min.x > b.max.x
+        || a.min.y > b.max.y
+        || a.min.z > b.max.z)
 }
 
 fn user_id_as_trimmed_string(bytes: &[u8; 16]) -> String {
@@ -307,13 +261,45 @@ fn user_id_as_trimmed_string(bytes: &[u8; 16]) -> String {
         .to_string()
 }
 
+/// Limits the octree levels to be queried in order to have
+/// a point cloud with the requested resolution.
+///
+/// resolution: Limits the octree levels to be queried in order
+/// to have a point cloud with the requested resolution.
+///
+/// - The unit is the one of the data.
+/// - If absent, the resulting cloud will be at the
+///   full resolution offered by the COPC source
+///
+/// level: The level of detail (LOD).
+///
+/// If absent, all LOD are going to be considered   
+pub enum LodSelection {
+    /// Full resolution (all LODs)
+    All,
+    /// requested resolution of point cloud
+    Resolution(f64),
+    /// only points that that are of the requested LOD will be returned.
+    Level(i32),
+    /// points for which the LOD is within the range will be returned.
+    LevelMinMax(i32, i32),
+}
+
+/// Select points within bounds
+pub enum BoundsSelection {
+    /// No bounds filter.
+    All,
+    /// Select points within bounds.
+    Within(Bounds),
+}
+
 /// LasZip point iterator
 pub struct PointIter<'a, R: Read + Seek + Send> {
     nodes: Vec<OctreeNode>,
     bounds: Option<[i32; 6]>,
     point_format: las::point::Format,
     transforms: Vector<Transform>,
-    decompressor: LasZipDecompressor<'a, &'a mut R>,
+    decompressor: CopcDecompressor<'a, &'a mut R>,
     point: Vec<u8>,
     node_points_left: usize,
     total_points_left: usize,
