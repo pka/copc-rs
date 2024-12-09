@@ -1,17 +1,18 @@
 [package]
-name = "copc-rs"
+name = "copc"
 version = "1.0.0"
-authors = ["Pirmin Kalberer <pka@sourcepole.ch>"]
+authors = ["Øyvind Hjermstad, @oyhj1801", "Pirmin Kalberer <pka@sourcepole.ch>"]
 edition = "2021"
 
 description = "Cloud Optimized Point Cloud (COPC) reader."
-homepage = "https://github.com/pka/copc-rs"
-repository = "https://github.com/pka/copc-rs"
+homepage = "https://github.com/oyhj1801/copc-rs"
+repository = "https://github.com/oyhj1801/copc-rs"
 readme = "README.md"
 license = "MIT/Apache-2.0"
-keywords = ["lidar", "pointcloud", "copc", "las", "geo"]
+keywords = ["lidar", "pointcloud", "copc", "las", "laz", "geo"]
 
 [dependencies]
 byteorder = "1.4.3"
-las = "0.9.2"
+las = {version = "0.9.2", features = ["laz"]}
 laz = "0.9.2"
+thiserror = "2.0.6"

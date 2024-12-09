@@ -1,19 +1,15 @@
 //! COPC VLR.
 
-use byteorder::{LittleEndian, ReadBytesExt};
-use las::{Bounds, Vector};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use las::{Bounds, Vector, Vlr};
 use std::hash::Hash;
-use std::io::Read;
+use std::io::{Cursor, Read, Write};
 
 /// COPC Info VLR data.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct CopcInfo {
-    /// Actual (unscaled) X coordinate of center of octree
-    pub center_x: f64,
-    /// Actual (unscaled) Y coordinate of center of octree
-    pub center_y: f64,
-    /// Actual (unscaled) Z coordinate of center of octree
-    pub center_z: f64,
+    /// Actual (unscaled) coordinates of center of octree
+    pub center: Vector<f64>,
     /// Perpendicular distance from the center to any side of the root node.
     pub halfsize: f64,
     /// Space between points at the root node.
@@ -27,24 +23,48 @@ pub struct CopcInfo {
     pub gpstime_minimum: f64,
     /// Maximum of GPSTime
     pub gpstime_maximum: f64,
-    /// Must be 0
-    _reserved: [u64; 11],
+    // Must be 0
+    //_reserved: [u64; 11],
 }
 
 impl CopcInfo {
-    /// Reads VLR data from a `Read`.
-    pub fn read_from<R: Read>(mut read: R) -> std::io::Result<Self> {
+    /// Reads COPC VLR data from a `Read`.
+    pub fn read_from<R: Read>(mut read: R) -> crate::Result<Self> {
         Ok(CopcInfo {
-            center_x: read.read_f64::<LittleEndian>()?,
-            center_y: read.read_f64::<LittleEndian>()?,
-            center_z: read.read_f64::<LittleEndian>()?,
+            center: Vector {
+                x: read.read_f64::<LittleEndian>()?,
+                y: read.read_f64::<LittleEndian>()?,
+                z: read.read_f64::<LittleEndian>()?,
+            },
             halfsize: read.read_f64::<LittleEndian>()?,
             spacing: read.read_f64::<LittleEndian>()?,
             root_hier_offset: read.read_u64::<LittleEndian>()?,
             root_hier_size: read.read_u64::<LittleEndian>()?,
             gpstime_minimum: read.read_f64::<LittleEndian>()?,
             gpstime_maximum: read.read_f64::<LittleEndian>()?,
-            _reserved: [0; 11],
+            //_reserved: [0; 11],
+        })
+    }
+
+    /// Convert COPC VLR data to a Vlr, size of VLR is 160
+    pub fn into_vlr(self) -> crate::Result<Vlr> {
+        let mut buffer = Cursor::new([0_u8; 160]);
+
+        buffer.write_f64::<LittleEndian>(self.center.x)?;
+        buffer.write_f64::<LittleEndian>(self.center.y)?;
+        buffer.write_f64::<LittleEndian>(self.center.z)?;
+        buffer.write_f64::<LittleEndian>(self.halfsize)?;
+        buffer.write_f64::<LittleEndian>(self.spacing)?;
+        buffer.write_u64::<LittleEndian>(self.root_hier_offset)?;
+        buffer.write_u64::<LittleEndian>(self.root_hier_size)?;
+        buffer.write_f64::<LittleEndian>(self.gpstime_minimum)?;
+        buffer.write_f64::<LittleEndian>(self.gpstime_maximum)?;
+
+        Ok(Vlr {
+            user_id: "copc".to_string(),
+            record_id: 1,
+            description: "copc vlr".to_string(),
+            data: Vec::from(buffer.into_inner()),
         })
     }
 }
@@ -77,7 +97,7 @@ impl Default for VoxelKey {
 
 impl VoxelKey {
     /// Reads VoxelKey from a `Read`.
-    pub fn read_from<R: Read>(read: &mut R) -> std::io::Result<Self> {
+    pub fn read_from<R: Read>(read: &mut R) -> crate::Result<Self> {
         Ok(VoxelKey {
             level: read.read_i32::<LittleEndian>()?,
             x: read.read_i32::<LittleEndian>()?,
@@ -85,6 +105,17 @@ impl VoxelKey {
             z: read.read_i32::<LittleEndian>()?,
         })
     }
+
+    /// Writes VoxelKey to a `Write`.
+    pub fn write_to<W: Write>(self, write: &mut W) -> crate::Result<()> {
+        write.write_i32::<LittleEndian>(self.level)?;
+        write.write_i32::<LittleEndian>(self.x)?;
+        write.write_i32::<LittleEndian>(self.y)?;
+        write.write_i32::<LittleEndian>(self.z)?;
+
+        Ok(())
+    }
+
     pub fn child(&self, dir: i32) -> VoxelKey {
         VoxelKey {
             level: self.level + 1,
@@ -142,13 +173,23 @@ pub struct Entry {
 
 impl Entry {
     /// Reads hierarchy entry from a `Read`.
-    pub fn read_from<R: Read>(read: &mut R) -> std::io::Result<Self> {
+    pub fn read_from<R: Read>(read: &mut R) -> crate::Result<Self> {
         Ok(Entry {
             key: VoxelKey::read_from(read)?,
             offset: read.read_u64::<LittleEndian>()?,
             byte_size: read.read_i32::<LittleEndian>()?,
             point_count: read.read_i32::<LittleEndian>()?,
         })
+    }
+
+    /// Writes a hierarchy entry to a `Write`
+    pub fn write_to<W: Write>(self, write: &mut W) -> crate::Result<()> {
+        self.key.write_to(write)?;
+        write.write_u64::<LittleEndian>(self.offset)?;
+        write.write_i32::<LittleEndian>(self.byte_size)?;
+        write.write_i32::<LittleEndian>(self.point_count)?;
+
+        Ok(())
     }
 }
 
@@ -164,7 +205,7 @@ pub struct HierarchyPage {
 
 impl HierarchyPage {
     /// Reads hierarchy page from a `Read`.
-    pub fn read_from<R: Read>(mut read: R, page_size: u64) -> std::io::Result<Self> {
+    pub(crate) fn read_from<R: Read>(mut read: R, page_size: u64) -> crate::Result<Self> {
         let num_entries = page_size as usize / 32;
         let mut entries = Vec::with_capacity(num_entries);
         for _ in 0..num_entries {
@@ -172,6 +213,31 @@ impl HierarchyPage {
             entries.push(entry);
         }
         Ok(HierarchyPage { entries })
+    }
+
+    /// Writes a hierarchy page to a `Write`
+    ///
+    /// This implementation of COPC writer writes all ept entries to a single page
+    pub(crate) fn into_evlr(self) -> crate::Result<Vlr> {
+        // page size in bytes is the number of entries times 32 bytes per entry
+        let mut buffer = Cursor::new(vec![0_u8; self.entries.len() * 32]);
+
+        for e in self.entries {
+            e.write_to(&mut buffer)?;
+        }
+
+        Ok(Vlr {
+            user_id: "copc".to_string(),
+            record_id: 1000,
+            description: "The EPT hierarchy, all in a single page".to_string(),
+            data: buffer.into_inner(),
+        })
+    }
+
+    /// The number of bytes this hierarchy page will occupy as an evlr, including the header
+    pub fn byte_size(&self) -> u64 {
+        // each entry is 32 bytes and a evlr header is 60 bytes
+        (self.entries.len() * 32) as u64 + 60
     }
 }
 
@@ -195,7 +261,11 @@ impl OctreeNode {
                 min: Vector::default(),
                 max: Vector::default(),
             },
-            children: Vec::new(),
+            children: Vec::with_capacity(8),
         }
+    }
+
+    pub fn is_full(&self, max_size: i32) -> bool {
+        self.entry.point_count >= max_size
     }
 }
