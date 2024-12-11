@@ -7,14 +7,15 @@
 copc-rs is a library for reading Cloud Optimized Point Cloud ([COPC](https://copc.io/)) data.
 
 
-## Usage example
+## Usage examples
 
+### reader
 ```rust
 use copc_rs::{Bounds, BoundsSelection, CopcReader, LodSelection, Vector};
 
 fn main() {
-    let path = "../aydatlidar/1.copc.laz";
-    let mut las_reader = CopcReader::from_path(path).unwrap();
+    let path = "./lidar.copc.laz";
+    let mut copc_reader = CopcReader::from_path(path).unwrap();
 
     let bounds = Bounds {
         min: Vector {
@@ -29,16 +30,37 @@ fn main() {
         },
     };
 
-    for point in las_reader
-        .points(LodSelection::All, BoundsSelection::Within(bounds))
+    for point in copc_reader
+        .points(LodSelection::Resolution(1.), BoundsSelection::Within(bounds))
         .unwrap()
     {
         // do something with the points
     }
 }
 ```
+### writer
+```rust
+use copc_rs::CopcWriter;
+use las::Reader;
+
+fn main() {
+    let las_reader = Reader::from_path("./lidar.las");
+
+    let header = las_reader.header().clone();
+
+    let mut copc_writer = CopcWriter::from_path("./lidar.copc.laz", header, -1);
+
+    copc_writer.write(las_reader.points().filter_map(las::Result::ok)).unwrap();
+
+    // This is not necessary as it is done automatically
+    // when the writer is dropped, but functions such as
+    // copc_writer.copc_info() and copc_writer.hierarchy_entries()
+    // only make sense after closing the writer
+    copc_writer.close();
+
+    println!("{:#?}", copc_writer.copc_info());
+}
+```
 
 ## Credits
-This fork simplifies the work of Pirmin Kalberer, owner of the forked repo
-
 This library depends heavily on the work of Thomas Montaigu (@tmontaigu) and Pete Gadomski (@gadomski), the authors of the laz and las crates.

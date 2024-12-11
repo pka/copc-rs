@@ -1,12 +1,23 @@
 /// Library for reading Cloud Optimized Point Cloud ([COPC](https://copc.io/)) data.
 use thiserror::Error;
 
-const MAX_NODE_SIZE_DEFAULT: i32 = 1024;
+const MAX_NODE_SIZE_DEFAULT: i32 = 4096;
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// crate specific Result type
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// crate specific Error enum
 #[derive(Error, Debug)]
 pub enum Error {
+    /// When trying to add points to a writer that already been closed
+    #[error("This writer has already been closed")]
+    ClosedWriter,
+
+    /// When trying to close an empty copc file
+    #[error("There are no points added to this file")]
+    EmptyCopcFile,
+
     /// [las::Error]
     #[error(transparent)]
     LasError(#[from] las::Error),
@@ -15,24 +26,13 @@ pub enum Error {
     #[error(transparent)]
     LasZipError(#[from] laz::LasZipError),
 
-    /// A point in the iterator passed to [new] was not
-    /// inside the bounds of the header passed to [new]
-    ///
-    /// [new]: crate::writer::CopcWriter::new
-    #[error("The point to add to the octree is not inside the root bounds")]
-    PointNotInBounds,
-
     /// The input file-path does not end in .copc.laz
     #[error("The extension of the file to write does not match .copc.laz")]
     WrongCopcExtension,
 
-    /// Only las version 1.4 can be written to .copc.laz
-    #[error("Only las version 1.4 can be written to .copc.laz. Given version: {:?}", .0)]
-    WrongLasVersion(las::Version),
-
-    /// A header of a las version 1.4 file must by 375 bytes long
-    #[error("A header of a las version 1.4 file must by 375 bytes long. Given header length: {:?}", .0)]
-    HeaderNot375Bytes(u16),
+    /// The requested resolution is either negative or not normal
+    #[error("The requested error is not possible: {}", .0)]
+    InvalidResolution(f64),
 
     /// [std::io::Error]
     #[error(transparent)]
@@ -57,6 +57,34 @@ pub enum Error {
     /// Should not be possible
     #[error("The point could not be added to any node in the octree")]
     PointNotAddedToAnyNode,
+
+    /// If the bounds in the passed in header is invalid
+    #[error("the bounds in the passed in header is not normal: {:?}", .0)]
+    InvalidBounds(las::Bounds),
+
+    /// If a point fails to be added to the copc
+    #[error(transparent)]
+    InvalidPoint(crate::PointAddError),
+}
+
+/// crate specific Error enum related to adding points to the writer
+#[derive(Error, Debug)]
+pub enum PointAddError {
+    /// A point in the iterator passed to [write] did not
+    /// match the format specified by the `header` passed to [new]
+    ///
+    /// [new]: crate::writer::CopcWriter::new
+    /// [write]: crate::writer::CopcWriter::write
+    #[error("The point attributes of a point in the iterator don't match the header: {:?}", .0)]
+    PointAttributesDoNotMatch(las::point::Format),
+
+    /// A point in the iterator passed to [write] was not
+    /// inside the bounds of the header passed to [new]
+    ///
+    /// [new]: crate::writer::CopcWriter::new
+    /// [write]: crate::writer::CopcWriter::write
+    #[error("A point in the iterator was not inside the bounds of the header")]
+    PointNotInBounds,
 }
 
 mod compressor;

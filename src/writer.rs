@@ -12,6 +12,7 @@ use std::path::Path;
 
 /// COPC file writer
 pub struct CopcWriter<'a, W: 'a + Write + Seek> {
+    is_closed: bool,
     start: u64,
     // point writer
     compressor: CopcCompressor<'a, W>,
@@ -21,7 +22,7 @@ pub struct CopcWriter<'a, W: 'a + Write + Seek> {
     max_node_size: i32,
     copc_info: CopcInfo,
     root_node: OctreeNode,
-    // a
+    // a hashmap to store chunks that are not full yet
     open_chunks: HashMap<VoxelKey, Cursor<Vec<u8>>>,
 }
 
@@ -33,10 +34,9 @@ impl CopcWriter<'_, BufWriter<File>> {
     /// see [new] for usage
     ///
     /// [new]: Self::new
-    pub fn from_path<D: Iterator<Item = las::Result<las::Point>> + Clone, P: AsRef<Path>>(
+    pub fn from_path<P: AsRef<Path>>(
         path: P,
         header: Header,
-        data: D,
         max_size: i32,
     ) -> crate::Result<Self> {
         let copc_ext = Path::new(match path.as_ref().file_stem() {
@@ -59,31 +59,23 @@ impl CopcWriter<'_, BufWriter<File>> {
 
         File::create(path)
             .map_err(crate::Error::from)
-            .and_then(|file| CopcWriter::new(BufWriter::new(file), header, data, max_size))
+            .and_then(|file| CopcWriter::new(BufWriter::new(file), header, max_size))
     }
 }
 
 impl<W: Write + Seek> CopcWriter<'_, W> {
-    /// Create a COPC file writer and writes the provided [Iterator] over [las::Result]<las::Point>
-    /// to anything that implements [std::io::Write] and [std::io::Seek]
+    /// Create a COPC file writer for the write- and seekable `write`
     /// configured with the provided [las::Header]
     /// recommended to use [from_path] for writing to file
     ///
-    /// If the `bounds` field in the `header` is [las::Bounds::default()], optimal bounds are calculated
-    /// from the data at the cost of iterating through the entire iterator one extra time
-    /// else the provided bounds are used at the risk of returning a [crate::Error] if a point in data is outside the bounds
-    /// returns a [crate::Error] if any item in data results in an [las::Error]
+    /// The `bounds` field in the `header` is used as the bounds for the octree
+    /// the bounds are checked for being normal
     ///
     /// `max_size` is the maximal number of [las::Point]s an octree node can hold
     /// any max_size < 1 sets the max_size to [crate::MAX_NODE_SIZE_DEFAULT]
     ///
     /// [from_path]: Self::from_path
-    pub fn new<D: Iterator<Item = las::Result<las::Point>> + Clone>(
-        mut write: W,
-        header: Header,
-        data: D,
-        max_size: i32,
-    ) -> crate::Result<Self> {
+    pub fn new(mut write: W, header: Header, max_size: i32) -> crate::Result<Self> {
         let start = write.stream_position()?;
 
         let max_node_size = if max_size < 1 {
@@ -92,12 +84,8 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
             max_size
         };
 
-        if !header.point_format().is_compressed {
-            Err(las::Error::InvalidPointFormat(*header.point_format()))?;
-        }
-
         if header.version() != las::Version::new(1, 4) {
-            return Err(crate::Error::WrongLasVersion(header.version()));
+            eprintln!("Old Las version. Upgrading");
         }
 
         // store the vlrs contained in the header for forwarding
@@ -126,81 +114,147 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
             }
         }
 
-        let calc_bounds = header.bounds() == las::Bounds::default();
+        // check bounds are normal
+        let bounds = header.bounds();
+        if !(bounds.max.x - bounds.min.x).is_normal()
+            || !(bounds.max.y - bounds.min.y).is_normal()
+            || !(bounds.max.z - bounds.min.z).is_normal()
+        {
+            return Err(crate::Error::InvalidBounds(bounds));
+        }
 
         let mut raw_head = header.into_raw()?;
 
         // mask off the two leftmost bits corresponding to compression of pdrf
-        if !(6..=8).contains(&(raw_head.point_data_record_format & 0b111111)) {
-            // must be 6, 7 or 8
-            Err(las::Error::InvalidPointFormat(las::point::Format::new(
-                raw_head.point_data_record_format,
-            )?))?;
-        }
-        // a las 1.4 header must be 375 bytes
-        if raw_head.header_size != raw_head.version.header_size() {
-            return Err(crate::Error::HeaderNot375Bytes(raw_head.header_size));
-        }
+        let pdrf = raw_head.point_data_record_format & 0b00111111;
+        let upgrade_pdrf = match pdrf {
+            1 => {
+                eprintln!("Old point data record format. Upgrading");
+                UpgradePdrf::From1to6
+            }
+            3 => {
+                eprintln!("Old point data record format. Upgrading");
+                UpgradePdrf::From3to7
+            }
+            0 | 2 => {
+                eprintln!("GPS time is mandatory");
+                return Err(las::Error::InvalidPointFormat(las::point::Format::new(
+                    raw_head.point_data_record_format,
+                )?))?;
+            }
+            4..=5 | 9.. => {
+                eprintln!("Waveform data is not supported");
+                return Err(las::Error::InvalidPointFormat(las::point::Format::new(
+                    raw_head.point_data_record_format,
+                )?))?;
+            }
+            6..=8 => UpgradePdrf::NoUpgrade,
+        };
 
         // clear some fields
-        raw_head.global_encoding &= 0b11001; // set internal and external waveform bits (bit 1 and 2) to zero, all bits 5..=15 must be zero
+        raw_head.version = las::Version::new(1, 4);
+        raw_head.point_data_record_format += match upgrade_pdrf {
+            UpgradePdrf::NoUpgrade => 0,
+            UpgradePdrf::From1to6 => 5,
+            UpgradePdrf::From3to7 => 4,
+        };
+        raw_head.point_data_record_format |= 0b11000000; // set the compress bits
+        raw_head.point_data_record_length += match upgrade_pdrf {
+            UpgradePdrf::NoUpgrade => 0,
+            _ => 2,
+        };
         raw_head.number_of_point_records = 0;
         raw_head.number_of_points_by_return = [0; 5];
         raw_head.large_file = None;
         raw_head.evlr = None;
         raw_head.padding = vec![];
 
-        if calc_bounds {
-            let bounds_data = data.clone();
-
-            let mut bounds = las::Bounds::default();
-            for point in bounds_data {
-                match point {
-                    Err(e) => Err(e)?,
-                    Ok(p) => bounds.grow(&p),
-                }
-            }
-            bounds.adapt(&Default::default())?;
-            raw_head.max_x = bounds.max.x;
-            raw_head.max_y = bounds.max.y;
-            raw_head.max_z = bounds.max.z;
-            raw_head.min_x = bounds.min.x;
-            raw_head.min_y = bounds.min.y;
-            raw_head.min_z = bounds.min.z;
+        let mut software_buffer = [0_u8; 32];
+        for (i, byte) in format!("COPC-rs v{}", crate::VERSION).bytes().enumerate() {
+            software_buffer[i] = byte;
         }
+        raw_head.generating_software = software_buffer;
 
         let mut builder = Builder::new(raw_head)?;
         // add a blank COPC-vlr as the first vlr
         builder.vlrs.push(CopcInfo::default().into_vlr()?);
 
+        // create the laz vlr
+        let point_format = builder.point_format;
+        let mut laz_items = laz::laszip::LazItemRecordBuilder::new();
+        laz_items.add_item(laz::LazItemType::Point14);
+        if point_format.has_color {
+            if point_format.has_nir {
+                laz_items.add_item(laz::LazItemType::RGBNIR14);
+            } else {
+                laz_items.add_item(laz::LazItemType::RGB14);
+            }
+        }
+        if point_format.extra_bytes > 0 {
+            laz_items.add_item(laz::LazItemType::Byte14(point_format.extra_bytes));
+        }
+
+        let laz_vlr = laz::LazVlrBuilder::new(laz_items.build())
+            .with_variable_chunk_size()
+            .build();
+        let mut cursor = Cursor::new(Vec::<u8>::new());
+        laz_vlr.write_to(&mut cursor)?;
+        let laz_vlr = las::Vlr {
+            user_id: laz::LazVlr::USER_ID.to_owned(),
+            record_id: laz::LazVlr::RECORD_ID,
+            description: laz::LazVlr::DESCRIPTION.to_owned(),
+            data: cursor.into_inner(),
+        };
+        builder.vlrs.push(laz_vlr);
+
+        // add the forwarded vlrs
         builder.vlrs.extend(forward_vlrs);
         builder.evlrs.extend(forward_evlrs);
         // the EPT-hierarchy evlr is not yet added
 
-        let mut header = builder.into_header()?;
-        header.add_laz_vlr()?;
+        let header = builder.into_header()?;
 
         // write the header and vlrs
         // this is just to reserve the space
         header.write_to(&mut write)?;
 
-        let mut root_node = OctreeNode::new();
-        root_node.bounds = header.bounds();
-        root_node.entry.key.level = 0;
-        root_node.entry.offset = write.stream_position()? - start;
-
-        let mut copc_info = CopcInfo::default();
-        copc_info.center = las::Vector {
-            x: (root_node.bounds.min.x + root_node.bounds.max.x) / 2.,
-            y: (root_node.bounds.min.y + root_node.bounds.max.y) / 2.,
-            z: (root_node.bounds.min.z + root_node.bounds.max.z) / 2.,
+        let center_point = las::Vector {
+            x: (bounds.min.x + bounds.max.x) / 2.,
+            y: (bounds.min.y + bounds.max.y) / 2.,
+            z: (bounds.min.z + bounds.max.z) / 2.,
         };
-        copc_info.halfsize = (copc_info.center.x - root_node.bounds.min.x).max(
-            (copc_info.center.y - root_node.bounds.min.y)
-                .max(copc_info.center.z - root_node.bounds.min.z),
-        );
+        let halfsize = (center_point.x - bounds.min.x)
+            .max((center_point.y - bounds.min.y).max(center_point.z - bounds.min.z));
 
-        let mut copc_writer = CopcWriter {
+        let mut root_node = OctreeNode::new();
+
+        root_node.bounds = las::Bounds {
+            min: las::Vector {
+                x: center_point.x - halfsize,
+                y: center_point.y - halfsize,
+                z: center_point.z - halfsize,
+            },
+            max: las::Vector {
+                x: center_point.x + halfsize,
+                y: center_point.y + halfsize,
+                z: center_point.z + halfsize,
+            },
+        };
+        root_node.entry.key.level = 0;
+        root_node.entry.offset = write.stream_position()?;
+
+        let copc_info = CopcInfo {
+            center: center_point,
+            halfsize,
+            spacing: 0.,
+            root_hier_offset: 0,
+            root_hier_size: 0,
+            gpstime_minimum: f64::MAX,
+            gpstime_maximum: f64::MIN,
+        };
+
+        Ok(CopcWriter {
+            is_closed: false,
             start,
             compressor: CopcCompressor::new(write, header.laz_vlr().unwrap())?,
             header,
@@ -209,32 +263,53 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
             copc_info,
             root_node,
             open_chunks: HashMap::default(),
-        };
+        })
+    }
 
-        for r_point in data.into_iter() {
-            match r_point {
-                Err(e) => Err(e)?,
-                Ok(p) => {
-                    if !p.matches(copc_writer.header.point_format()) {
-                        Err(las::Error::PointAttributesDoNotMatch(
-                            *copc_writer.header.point_format(),
-                        ))?;
-                    }
-                    if !bounds_contains_point(&copc_writer.root_node.bounds, &p) {
-                        return Err(crate::Error::PointNotInBounds);
-                    }
+    /// Write anything that implements [IntoIterator]
+    /// over [las::Point] to the copc
+    ///
+    /// returns an `Err`([crate::Error]) if the writer has already been closed
+    /// or a point is outside the copc `bounds` or not matching the
+    /// [las::point::Format] of the header provided to [new]
+    /// [crate::PointAddError::PointAttributesDoNotMatch] take precedence over
+    /// [crate::PointAddError::PointNotInBounds]
+    ///
+    /// All points which both match the point format and are inside the bounds are added
+    ///
+    /// If all points both match the format and are inside the bounds `Ok(())` is returned
+    ///
+    /// [new]: Self::new
+    pub fn write<D: IntoIterator<Item = las::Point>>(&mut self, data: D) -> crate::Result<()> {
+        if self.is_closed {
+            return Err(crate::Error::ClosedWriter);
+        }
 
-                    copc_writer.add_point(p)?;
-                }
+        let mut invalid_points = Ok(());
+
+        for p in data.into_iter() {
+            if !p.matches(self.header.point_format()) {
+                invalid_points = Err(crate::Error::InvalidPoint(
+                    crate::PointAddError::PointAttributesDoNotMatch(*self.header.point_format()),
+                ));
+                continue;
             }
-        }
-        if copc_writer.header.number_of_points() < 1 {
-            return Err(crate::Error::EmptyIterator);
-        }
+            if !bounds_contains_point(&self.root_node.bounds, &p) {
+                if invalid_points.is_ok() {
+                    invalid_points = Err(crate::Error::InvalidPoint(
+                        crate::PointAddError::PointNotInBounds,
+                    ));
+                }
+                continue;
+            }
 
-        copc_writer.close()?;
+            self.add_point(p)?;
+        }
+        invalid_points
+    }
 
-        Ok(copc_writer)
+    pub fn is_closed(&self) -> bool {
+        self.is_closed
     }
 
     pub fn header(&self) -> &Header {
@@ -245,11 +320,23 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
         &self.hierarchy
     }
 
+    /// only makes sense after closing the writer
     pub fn copc_info(&self) -> &CopcInfo {
         &self.copc_info
     }
 
-    fn close(&mut self) -> crate::Result<()> {
+    /// Close must be called after writing all points
+    /// Sometimes it might make sense to call it explictly
+    /// but most of the time don't bother calling it
+    /// and it will automatically be called on drop
+    pub fn close(&mut self) -> crate::Result<()> {
+        if self.is_closed {
+            return Err(crate::Error::ClosedWriter);
+        }
+        if self.header.number_of_points() < 1 {
+            return Err(crate::Error::EmptyCopcFile);
+        }
+
         // write the unclosed chunks
         for (key, chunk) in self.open_chunks.drain() {
             let inner = chunk.into_inner();
@@ -267,7 +354,7 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
 
         self.compressor.done()?;
 
-        let start_of_first_evlr = self.compressor.get_mut().stream_position()? - self.start;
+        let start_of_first_evlr = self.compressor.get_mut().stream_position()?;
 
         let raw_evlrs: Vec<las::Result<las::raw::Vlr>> = {
             self.header
@@ -288,8 +375,7 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
             raw_evlr?.write_to(self.compressor.get_mut())?;
         }
 
-        let _ = self
-            .compressor
+        self.compressor
             .get_mut()
             .seek(SeekFrom::Start(self.start))?;
         self.header.clone().into_raw().and_then(|mut raw_header| {
@@ -308,8 +394,8 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
         // update the copc info vlr and write it
         self.copc_info.spacing =
             self.copc_info.halfsize * 2. / self.hierarchy.entries[0].point_count as f64;
-        self.copc_info.root_hier_offset = start_of_first_evlr;
-        self.copc_info.root_hier_size = self.hierarchy.byte_size();
+        self.copc_info.root_hier_offset = start_of_first_evlr + 60;
+        self.copc_info.root_hier_size = self.hierarchy.byte_size() - 60;
 
         self.copc_info
             .clone()
@@ -317,10 +403,11 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
             .into_raw(false)?
             .write_to(self.compressor.get_mut())?;
 
-        let _ = self
-            .compressor
+        self.compressor
             .get_mut()
             .seek(SeekFrom::Start(self.start))?;
+
+        self.is_closed = true;
         Ok(())
     }
 
@@ -331,12 +418,19 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
     fn add_point(&mut self, point: las::Point) -> crate::Result<()> {
         self.header.add_point(&point);
 
-        let raw_point = point.clone().into_raw(self.header.transforms())?;
+        if point.gps_time.unwrap() < self.copc_info.gpstime_minimum {
+            self.copc_info.gpstime_minimum = point.gps_time.unwrap();
+        } else if point.gps_time.unwrap() > self.copc_info.gpstime_maximum {
+            self.copc_info.gpstime_maximum = point.gps_time.unwrap();
+        }
 
         let mut node_key = None;
         let mut write_chunk = false;
 
         let root_bounds = self.root_node.bounds;
+
+        // starting from the root walk thorugh the octree
+        // and find the correct node to add the point to
         let mut nodes_to_check = vec![&mut self.root_node];
         while let Some(node) = nodes_to_check.pop() {
             if !bounds_contains_point(&node.bounds, &point) {
@@ -369,11 +463,14 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
             node.entry.point_count += 1;
 
             write_chunk = node.is_full(self.max_node_size);
+            break;
         }
         if node_key.is_none() {
             return Err(crate::Error::PointNotAddedToAnyNode);
         }
         let node_key = node_key.unwrap();
+
+        let raw_point = point.into_raw(self.header.transforms())?;
 
         if !self.open_chunks.contains_key(&node_key) {
             let mut val = Cursor::new(vec![]);
@@ -394,9 +491,17 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
                 offset: chunk_offset,
                 byte_size: chunk_table_entry.byte_count as i32,
                 point_count: chunk_table_entry.point_count as i32,
-            })
+            });
         }
         Ok(())
+    }
+}
+
+impl<W: Write + Seek> Drop for CopcWriter<'_, W> {
+    fn drop(&mut self) {
+        if !self.is_closed {
+            self.close().expect("Error when dropping the writer");
+        }
     }
 }
 
@@ -407,4 +512,10 @@ fn bounds_contains_point(b: &las::Bounds, p: &las::Point) -> bool {
         || b.min.x > p.x
         || b.min.y > p.y
         || b.min.z > p.z)
+}
+
+enum UpgradePdrf {
+    From1to6,
+    From3to7,
+    NoUpgrade,
 }

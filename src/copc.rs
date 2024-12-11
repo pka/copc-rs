@@ -46,7 +46,7 @@ impl CopcInfo {
         })
     }
 
-    /// Convert COPC VLR data to a Vlr, size of VLR is 160
+    /// Convert COPC VLR data to a Vlr, size of VLR is 160bytes + header
     pub fn into_vlr(self) -> crate::Result<Vlr> {
         let mut buffer = Cursor::new([0_u8; 160]);
 
@@ -229,7 +229,7 @@ impl HierarchyPage {
         Ok(Vlr {
             user_id: "copc".to_string(),
             record_id: 1000,
-            description: "The EPT hierarchy, all in a single page".to_string(),
+            description: "The EPT hierarchy".to_string(),
             data: buffer.into_inner(),
         })
     }

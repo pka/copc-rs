@@ -42,9 +42,9 @@ impl<R: Read + Seek> CopcReader<R> {
         let raw_header = raw::Header::read_from(&mut read)?;
 
         // store useful parts of the raw header before its consumed by the builder
-        let mut position = u64::from(raw_header.header_size);
+        let mut position = raw_header.header_size as u64;
         let number_of_variable_length_records = raw_header.number_of_variable_length_records;
-        let offset_to_point_data = u64::from(raw_header.offset_to_point_data);
+        let offset_to_point_data = raw_header.offset_to_point_data as u64;
         let evlr = raw_header.evlr;
 
         // start building a header from a raw header
@@ -62,7 +62,7 @@ impl<R: Read + Seek> CopcReader<R> {
             Ordering::Less => {
                 let _ = read
                     .by_ref()
-                    .take(offset_to_point_data - position)
+                    .take(offset_to_point_data + start - position)
                     .read_to_end(&mut builder.vlr_padding)?;
             }
             Ordering::Equal => {} // pass
@@ -88,6 +88,7 @@ impl<R: Read + Seek> CopcReader<R> {
         let mut copc_info = None;
         let mut laszip_vlr = None;
         let mut ept_hierarchy = None;
+
         for vlr in header.all_vlrs() {
             match (vlr.user_id.to_lowercase().as_str(), vlr.record_id) {
                 ("copc", 1) => {
@@ -111,17 +112,16 @@ impl<R: Read + Seek> CopcReader<R> {
             Some(vlr) => {
                 let mut hierarchy_entries = HashMap::new();
 
-                let mut read_vlr = Cursor::new(vlr.data.clone());
+                let mut read_vlr = Cursor::new(vlr.data.as_slice());
 
                 // read the root hierarchy page
                 let mut page =
                     HierarchyPage::read_from(&mut read_vlr, copc_info.root_hier_size)?.entries;
+
                 while let Some(entry) = page.pop() {
                     if entry.point_count == -1 {
                         // read a new hierarchy page
-                        read.seek(SeekFrom::Start(
-                            entry.offset - copc_info.root_hier_offset + start,
-                        ))?;
+                        read.seek(SeekFrom::Start(entry.offset - copc_info.root_hier_offset))?;
                         page.extend(
                             HierarchyPage::read_from(&mut read, entry.byte_size as u64)?.entries,
                         );
@@ -155,6 +155,10 @@ impl<R: Read + Seek> CopcReader<R> {
         &self.copc_info
     }
 
+    pub fn num_entries(&self) -> usize {
+        self.hierarchy_entries.len()
+    }
+
     /// Loads the nodes of the COPC octree that
     /// satisfies the parameters `query_bounds` and `level_range`.
     ///
@@ -166,10 +170,15 @@ impl<R: Read + Seek> CopcReader<R> {
     ) -> crate::Result<Vec<OctreeNode>> {
         let (level_min, level_max) = match level_range {
             LodSelection::All => (0, i32::MAX),
-            LodSelection::Resolution(resolution) => (
-                0,
-                1.max((resolution * self.copc_info.spacing).log2().ceil() as i32),
-            ),
+            LodSelection::Resolution(resolution) => {
+                if !resolution.is_normal() || !resolution.is_sign_positive() {
+                    return Err(crate::Error::InvalidResolution(resolution));
+                }
+                (
+                    0,
+                    1.max((self.copc_info.spacing / resolution).log2().ceil() as i32 + 1),
+                )
+            }
             LodSelection::Level(level) => (level, level + 1),
             LodSelection::LevelMinMax(min, max) => (min, max),
         };
@@ -325,7 +334,12 @@ pub enum LodSelection {
     /// Full resolution (all LODs)
     All,
     /// requested minimal resolution of point cloud
-    /// higher value -> more points / cube unit
+    /// given as space between points
+    /// based on the spacing given in the copc info vlr
+    /// defined as root-node side length / number of points in root node
+    /// when traversing the octree levels the spacing of level i is copc_spacing*2^-i
+    ///
+    /// Tldr; higher value -> fewer points / cube unit
     Resolution(f64),
     /// only points that that are of the requested LOD will be returned.
     Level(i32),
