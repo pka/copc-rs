@@ -9,13 +9,12 @@ pub struct CopcCompressor<'a, W: Write + Seek + 'a> {
     record_compressor: LayeredPointRecordCompressor<'a, W>,
     /// Position where LasZipCompressor started
     start_pos: u64,
-    /// Table of chunks written so far
-    chunk_table: ChunkTable,
+    /// Position where the current chunk started
+    chunk_start_pos: u64,
     /// Entry for the chunk we are currently compressing
     current_chunk_entry: ChunkTableEntry,
-    /// Position (offset from start_pos)
-    /// where the current chunk started
-    chunk_start_pos: u64,
+    /// Table of chunks written so far
+    chunk_table: ChunkTable,
 }
 
 impl<'a, W: Write + Seek + 'a> CopcCompressor<'a, W> {
@@ -26,6 +25,7 @@ impl<'a, W: Write + Seek + 'a> CopcCompressor<'a, W> {
         let stream = record_compressor.get_mut();
 
         let start_pos = stream.stream_position()?;
+        // reserve 8 bytes for the offset to the chunk table
         stream.write_i64::<LittleEndian>(-1)?;
 
         Ok(Self {
@@ -38,16 +38,7 @@ impl<'a, W: Write + Seek + 'a> CopcCompressor<'a, W> {
         })
     }
 
-    /// Compress a single chunk
-    /// Compresses every point in the chunk and
-    /// writes the compressed data to the destination given when
-    /// the compressor was constructed
-    ///
-    /// The data is written in the buffer is expected to be exactly
-    /// as it would have been in a LAS File, that is:
-    ///
-    /// - The fields/dimensions are in the same order as the LAS spec says
-    /// - The data in the buffer is in Little Endian order
+    /// Compress a chunk
     pub fn compress_chunk<Chunk: AsRef<[u8]>>(
         &mut self,
         chunk: Chunk,
@@ -64,11 +55,19 @@ impl<'a, W: Write + Seek + 'a> CopcCompressor<'a, W> {
             .set_fields_from(self.vlr.items())
             .unwrap();
 
-        let old_chunk_start_pos = self.chunk_start_pos;
+        // update the chunk table
+        let current_pos = self.record_compressor.get_mut().stream_position()?;
+        self.current_chunk_entry.byte_count = current_pos - self.chunk_start_pos;
+        self.chunk_table.push(self.current_chunk_entry);
 
-        self.update_chunk_table()?;
+        // store chunk entry and chunk start pos for returning
+        let old_chunk_start_pos = self.chunk_start_pos;
         let written_chunk_entry = self.current_chunk_entry;
+
+        // reset the chunk
+        self.chunk_start_pos = current_pos;
         self.current_chunk_entry = ChunkTableEntry::default();
+
         Ok((written_chunk_entry, old_chunk_start_pos))
     }
 
@@ -76,10 +75,7 @@ impl<'a, W: Write + Seek + 'a> CopcCompressor<'a, W> {
     pub fn done(&mut self) -> std::io::Result<()> {
         self.record_compressor.done()?;
 
-        // updates the first 8 bytes of the compressed block
-        // which describes the offset to the chunk table
-        // the bytes are assumed to be reserved ie no point data written there
-        // also assumes the current pos is at the chunk table start
+        // update the offset to the chunk table
         let stream = self.record_compressor.get_mut();
         let start_of_chunk_table_pos = stream.stream_position()?;
         stream.seek(SeekFrom::Start(self.start_pos))?;
@@ -91,16 +87,5 @@ impl<'a, W: Write + Seek + 'a> CopcCompressor<'a, W> {
 
     pub fn get_mut(&mut self) -> &mut W {
         self.record_compressor.get_mut()
-    }
-
-    #[inline]
-    fn update_chunk_table(&mut self) -> std::io::Result<()> {
-        let current_pos = self.record_compressor.get_mut().stream_position()?;
-        self.current_chunk_entry.byte_count = current_pos - self.chunk_start_pos;
-        self.chunk_table.push(self.current_chunk_entry);
-
-        // reset the chunk start pos
-        self.chunk_start_pos = current_pos;
-        Ok(())
     }
 }

@@ -63,7 +63,7 @@ impl CopcInfo {
         Ok(Vlr {
             user_id: "copc".to_string(),
             record_id: 1,
-            description: "copc vlr".to_string(),
+            description: "COPC info VLR".to_string(),
             data: Vec::from(buffer.into_inner()),
         })
     }
@@ -229,15 +229,15 @@ impl HierarchyPage {
         Ok(Vlr {
             user_id: "copc".to_string(),
             record_id: 1000,
-            description: "The EPT hierarchy".to_string(),
+            description: "EPT Hierarchy".to_string(),
             data: buffer.into_inner(),
         })
     }
 
-    /// The number of bytes this hierarchy page will occupy as an evlr, including the header
+    /// The number of bytes the data in the evlr is
     pub fn byte_size(&self) -> u64 {
-        // each entry is 32 bytes and a evlr header is 60 bytes
-        (self.entries.len() * 32) as u64 + 60
+        // each entry is 32 bytes
+        (self.entries.len() * 32) as u64
     }
 }
 

@@ -151,14 +151,14 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
             6..=8 => UpgradePdrf::NoUpgrade,
         };
 
-        // clear some fields
+        // adjust and clear some fields
         raw_head.version = las::Version::new(1, 4);
         raw_head.point_data_record_format += match upgrade_pdrf {
             UpgradePdrf::NoUpgrade => 0,
             UpgradePdrf::From1to6 => 5,
             UpgradePdrf::From3to7 => 4,
         };
-        raw_head.point_data_record_format |= 0b11000000; // set the compress bits
+        raw_head.point_data_record_format |= 0b10000000; // make sure the compress bits are set
         raw_head.point_data_record_length += match upgrade_pdrf {
             UpgradePdrf::NoUpgrade => 0,
             _ => 2,
@@ -394,8 +394,8 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
         // update the copc info vlr and write it
         self.copc_info.spacing =
             self.copc_info.halfsize * 2. / self.hierarchy.entries[0].point_count as f64;
-        self.copc_info.root_hier_offset = start_of_first_evlr + 60;
-        self.copc_info.root_hier_size = self.hierarchy.byte_size() - 60;
+        self.copc_info.root_hier_offset = start_of_first_evlr + 60; // the header is 60bytes
+        self.copc_info.root_hier_size = self.hierarchy.byte_size();
 
         self.copc_info
             .clone()
