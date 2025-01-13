@@ -10,6 +10,13 @@ use std::fs::File;
 use std::io::{BufWriter, Cursor, Seek, SeekFrom, Write};
 use std::path::Path;
 
+// enum for point data record format upgrades
+enum UpgradePdrf {
+    From1to6,
+    From3to7,
+    NoUpgrade,
+}
+
 /// COPC file writer
 pub struct CopcWriter<'a, W: 'a + Write + Seek> {
     is_closed: bool,
@@ -19,8 +26,10 @@ pub struct CopcWriter<'a, W: 'a + Write + Seek> {
     header: Header,
     // a page of the written entries
     hierarchy: HierarchyPage,
+    min_node_size: i32,
     max_node_size: i32,
     copc_info: CopcInfo,
+    // root node in octree, access point for the tree
     root_node: OctreeNode,
     // a hashmap to store chunks that are not full yet
     open_chunks: HashMap<VoxelKey, Cursor<Vec<u8>>>,
@@ -81,7 +90,7 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
     /// this is a hard limit
     ///
     /// `min_size` greater or equal to `max_size` after checking values < 1
-    /// is an InvalidNodeSize error
+    /// results in a [crate::Error::InvalidNodeSize] error
     ///
     /// [from_path]: Self::from_path
     pub fn new(mut write: W, header: Header, min_size: i32, max_size: i32) -> crate::Result<Self> {
@@ -279,6 +288,7 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
             compressor: CopcCompressor::new(write, header.laz_vlr().unwrap())?,
             header,
             hierarchy: HierarchyPage { entries: vec![] },
+            min_node_size,
             max_node_size,
             copc_info,
             root_node,
@@ -287,45 +297,51 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
     }
 
     /// Write anything that implements [IntoIterator]
-    /// over [las::Point] to the copc
+    /// over [las::Point] to the COPC [Write]
+    /// Only one iterator can be written so a call to [Self::write] closes the writer.
     ///
-    /// returns an `Err`([crate::Error]) if the writer has already been closed
-    /// or a point is outside the copc `bounds` or not matching the
-    /// [las::point::Format] of the header provided to [new]
+    /// `num_points` is the number of points in the iterator
+    /// the number of points is used for stochastically filling the nodes
+    /// if `num_points` is < 1 a greedy filling strategy is used
+    /// this should only be used if the passed iterator is randomly ordered
+    /// if `num_points` is not equal to the actual number of points in the
+    /// iterator all points will still be written but the point distribution
+    /// in a node will not represent of the entire distribution over that node
+    /// i.e. only full resolution queries will look right
+    ///
+    /// returns an `Err`([crate::Error::ClosedWriter]) if the writer has already been closed.
+    ///
+    /// If a point is outside the copc `bounds` or not matching the
+    /// [las::point::Format] of the writer's header `Err` is returned
     /// [crate::PointAddError::PointAttributesDoNotMatch] take precedence over
     /// [crate::PointAddError::PointNotInBounds]
+    /// All the points inside the bounds and matching the point format are written regardless
     ///
     /// All points which both match the point format and are inside the bounds are added
     ///
-    /// If all points both match the format and are inside the bounds `Ok(())` is returned
+    /// Lastly [Self::close] is called. If closing fails an [crate::Error] is returned and
+    /// the state of the [Write] is undefined
     ///
-    /// [new]: Self::new
-    pub fn write<D: IntoIterator<Item = las::Point>>(&mut self, data: D) -> crate::Result<()> {
+    /// If all points match the format, are inside the bounds and [Self::close] is successfull `Ok(())` is returned
+    pub fn write<D: IntoIterator<Item = las::Point>>(
+        &mut self,
+        data: D,
+        num_points: i32,
+    ) -> crate::Result<()> {
         if self.is_closed {
             return Err(crate::Error::ClosedWriter);
         }
 
-        let mut invalid_points = Ok(());
+        let result = if num_points < self.max_node_size + self.min_node_size {
+            // greedy filling strategy
+            self.write_greedy(data)
+        } else {
+            // stochastic filling strategy
+            self.write_stochastic(data, num_points)
+        };
 
-        for p in data.into_iter() {
-            if !p.matches(self.header.point_format()) {
-                invalid_points = Err(crate::Error::InvalidPoint(
-                    crate::PointAddError::PointAttributesDoNotMatch(*self.header.point_format()),
-                ));
-                continue;
-            }
-            if !bounds_contains_point(&self.root_node.bounds, &p) {
-                if invalid_points.is_ok() {
-                    invalid_points = Err(crate::Error::InvalidPoint(
-                        crate::PointAddError::PointNotInBounds,
-                    ));
-                }
-                continue;
-            }
-
-            self.add_point(p)?;
-        }
-        invalid_points
+        self.close()?;
+        result
     }
 
     /// Whether this writer is closed or not
@@ -348,11 +364,68 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
         &self.copc_info
     }
 
+    /// Greedy strategy for writing points
+    fn write_greedy<D: IntoIterator<Item = las::Point>>(&mut self, data: D) -> crate::Result<()> {
+        let mut invalid_points = Ok(());
+
+        for p in data.into_iter() {
+            if !p.matches(self.header.point_format()) {
+                invalid_points = Err(crate::Error::InvalidPoint(
+                    crate::PointAddError::PointAttributesDoNotMatch(*self.header.point_format()),
+                ));
+                continue;
+            }
+            if !bounds_contains_point(&self.root_node.bounds, &p) {
+                if invalid_points.is_ok() {
+                    invalid_points = Err(crate::Error::InvalidPoint(
+                        crate::PointAddError::PointNotInBounds,
+                    ));
+                }
+                continue;
+            }
+
+            self.add_point_greedy(p)?;
+        }
+        invalid_points
+    }
+
+    /// Stochastic strategy for writing points
+    fn write_stochastic<D: IntoIterator<Item = las::Point>>(
+        &mut self,
+        data: D,
+        num_points: i32,
+    ) -> crate::Result<()> {
+        let mut invalid_points = Ok(());
+
+        let mut written_points = 0;
+
+        for p in data.into_iter() {
+            if !p.matches(self.header.point_format()) {
+                invalid_points = Err(crate::Error::InvalidPoint(
+                    crate::PointAddError::PointAttributesDoNotMatch(*self.header.point_format()),
+                ));
+                continue;
+            }
+            if !bounds_contains_point(&self.root_node.bounds, &p) {
+                if invalid_points.is_ok() {
+                    invalid_points = Err(crate::Error::InvalidPoint(
+                        crate::PointAddError::PointNotInBounds,
+                    ));
+                }
+                continue;
+            }
+
+            self.add_point_stochastic(p, written_points, num_points)?;
+
+            // increment and clamp the number of written points
+            // so that the 0 <= written_points/num_points <= 1
+            written_points = num_points.min(written_points + 1);
+        }
+        invalid_points
+    }
+
     /// Close must be called after writing all points
-    /// Sometimes it might make sense to call it explictly
-    /// but most of the time don't bother calling it
-    /// and it will automatically be called on drop
-    pub fn close(&mut self) -> crate::Result<()> {
+    fn close(&mut self) -> crate::Result<()> {
         if self.is_closed {
             return Err(crate::Error::ClosedWriter);
         }
@@ -451,7 +524,7 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
     // or make the add function probibalistic, but this would probably require
     // to know the number of points to be written upfront to balance the probability
     // and that does not lend itself very well to the possibility of adding many iterators
-    fn add_point(&mut self, point: las::Point) -> crate::Result<()> {
+    fn add_point_greedy(&mut self, point: las::Point) -> crate::Result<()> {
         self.header.add_point(&point);
 
         if point.gps_time.unwrap() < self.copc_info.gpstime_minimum {
@@ -531,12 +604,24 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
         }
         Ok(())
     }
+
+    fn add_point_stochastic(
+        &mut self,
+        point: las::Point,
+        written_points: i32,
+        expected_points: i32,
+    ) -> crate::Result<()> {
+        Ok(())
+    }
 }
 
 impl<W: Write + Seek> Drop for CopcWriter<'_, W> {
     fn drop(&mut self) {
         if !self.is_closed {
-            self.close().expect("Error when dropping the writer");
+            // can only happen if the writer is created but no points is written
+            // or something goes wrong while writing
+            self.close()
+                .expect("Error when dropping the writer. No points written.");
         }
     }
 }
@@ -549,10 +634,4 @@ fn bounds_contains_point(b: &las::Bounds, p: &las::Point) -> bool {
         || b.min.x > p.x
         || b.min.y > p.y
         || b.min.z > p.z)
-}
-
-enum UpgradePdrf {
-    From1to6,
-    From3to7,
-    NoUpgrade,
 }

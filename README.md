@@ -3,9 +3,7 @@
 [![crates.io version](https://img.shields.io/crates/v/copc-rs.svg)](https://crates.io/crates/copc-rs)
 [![docs.rs docs](https://docs.rs/copc-rs/badge.svg)](https://docs.rs/copc-rs)
 
-
-copc-rs is a library for reading Cloud Optimized Point Cloud ([COPC](https://copc.io/)) data.
-
+copc-rs is a rust library for reading and writing Cloud Optimized Point Cloud ([COPC](https://copc.io/)) data.
 
 ## Usage examples
 
@@ -14,8 +12,7 @@ copc-rs is a library for reading Cloud Optimized Point Cloud ([COPC](https://cop
 use copc_rs::{Bounds, BoundsSelection, CopcReader, LodSelection, Vector};
 
 fn main() {
-    let path = "./lidar.copc.laz";
-    let mut copc_reader = CopcReader::from_path(path).unwrap();
+    let mut copc_reader = CopcReader::from_path("./lidar.copc.laz").unwrap();
 
     let bounds = Bounds {
         min: Vector {
@@ -44,19 +41,16 @@ use copc_rs::CopcWriter;
 use las::Reader;
 
 fn main() {
-    let las_reader = Reader::from_path("./lidar.las");
+    let mut las_reader = Reader::from_path("./lidar.las").unwrap();
 
     let header = las_reader.header().clone();
+    let num_points = header.number_of_points();
 
-    let mut copc_writer = CopcWriter::from_path("./lidar.copc.laz", header, -1);
+    let points = las_reader.points().filter_map(las::Result::ok);
 
-    copc_writer.write(las_reader.points().filter_map(las::Result::ok)).unwrap();
+    let mut copc_writer = CopcWriter::from_path("./lidar.copc.laz", header, -1, -1).unwrap();
 
-    // This is not necessary as it is done automatically
-    // when the writer is dropped, but functions such as
-    // copc_writer.copc_info() and copc_writer.hierarchy_entries()
-    // only make sense after closing the writer
-    copc_writer.close();
+    copc_writer.write(points, num_points).unwrap();
 
     println!("{:#?}", copc_writer.copc_info());
 }
