@@ -31,7 +31,7 @@ impl<'a, W: Write + Seek + 'a> CopcCompressor<'a, W> {
         Ok(Self {
             vlr,
             record_compressor,
-            chunk_start_pos: start_pos + 8,
+            chunk_start_pos: start_pos + 8, // size of the written i64
             start_pos,
             chunk_table: ChunkTable::default(),
             current_chunk_entry: ChunkTableEntry::default(),

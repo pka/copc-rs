@@ -238,6 +238,10 @@ impl<R: Read + Seek> CopcReader<R> {
                 satisfying_nodes.push(current_node);
             }
         }
+
+        // Sort nodes by decending offsets for sequential reading
+        satisfying_nodes.sort_by(|a, b| b.entry.offset.partial_cmp(&a.entry.offset).unwrap());
+
         Ok(satisfying_nodes)
     }
 

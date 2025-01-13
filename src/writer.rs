@@ -17,7 +17,7 @@ pub struct CopcWriter<'a, W: 'a + Write + Seek> {
     // point writer
     compressor: CopcCompressor<'a, W>,
     header: Header,
-    // a page of the written full entries
+    // a page of the written entries
     hierarchy: HierarchyPage,
     max_node_size: i32,
     copc_info: CopcInfo,
@@ -37,6 +37,7 @@ impl CopcWriter<'_, BufWriter<File>> {
     pub fn from_path<P: AsRef<Path>>(
         path: P,
         header: Header,
+        min_size: i32,
         max_size: i32,
     ) -> crate::Result<Self> {
         let copc_ext = Path::new(match path.as_ref().file_stem() {
@@ -59,7 +60,7 @@ impl CopcWriter<'_, BufWriter<File>> {
 
         File::create(path)
             .map_err(crate::Error::from)
-            .and_then(|file| CopcWriter::new(BufWriter::new(file), header, max_size))
+            .and_then(|file| CopcWriter::new(BufWriter::new(file), header, min_size, max_size))
     }
 }
 
@@ -73,16 +74,34 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
     ///
     /// `max_size` is the maximal number of [las::Point]s an octree node can hold
     /// any max_size < 1 sets the max_size to [crate::MAX_NODE_SIZE_DEFAULT]
+    /// this is a soft limit
+    ///
+    /// `min_size` is the minimal number of [las::Point]s an octree node can hold
+    /// any min_size < 1 sets the min_size to [crate::MIN_NODE_SIZE_DEFAULT]
+    /// this is a hard limit
+    ///
+    /// `min_size` greater or equal to `max_size` after checking values < 1
+    /// is an InvalidNodeSize error
     ///
     /// [from_path]: Self::from_path
-    pub fn new(mut write: W, header: Header, max_size: i32) -> crate::Result<Self> {
+    pub fn new(mut write: W, header: Header, min_size: i32, max_size: i32) -> crate::Result<Self> {
         let start = write.stream_position()?;
+
+        let min_node_size = if min_size < 1 {
+            crate::MIN_NODE_SIZE_DEFAULT
+        } else {
+            min_size
+        };
 
         let max_node_size = if max_size < 1 {
             crate::MAX_NODE_SIZE_DEFAULT
         } else {
             max_size
         };
+
+        if min_node_size >= max_node_size {
+            return Err(crate::Error::InvalidNodeSize);
+        }
 
         if header.version() != las::Version::new(1, 4) {
             eprintln!("Old Las version. Upgrading");
@@ -175,6 +194,7 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
         }
         raw_head.generating_software = software_buffer;
 
+        // start building a real header from the raw header
         let mut builder = Builder::new(raw_head)?;
         // add a blank COPC-vlr as the first vlr
         builder.vlrs.push(CopcInfo::default().into_vlr()?);
@@ -308,19 +328,22 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
         invalid_points
     }
 
+    /// Whether this writer is closed or not
     pub fn is_closed(&self) -> bool {
         self.is_closed
     }
 
+    /// This writer's header, some fields are updated on closing of the writer
     pub fn header(&self) -> &Header {
         &self.header
     }
 
+    /// This writer's EPT Hierarchy, is updated on closing of the writer
     pub fn hierarchy_entries(&self) -> &HierarchyPage {
         &self.hierarchy
     }
 
-    /// only makes sense after closing the writer
+    /// This writer's COPC info, is updated on closing of the writer
     pub fn copc_info(&self) -> &CopcInfo {
         &self.copc_info
     }
@@ -393,7 +416,7 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
 
         // update the copc info vlr and write it
         self.copc_info.spacing =
-            self.copc_info.halfsize * 2. / self.hierarchy.entries[0].point_count as f64;
+            2. * self.copc_info.halfsize / (self.root_node.entry.point_count as f64);
         self.copc_info.root_hier_offset = start_of_first_evlr + 60; // the header is 60bytes
         self.copc_info.root_hier_size = self.hierarchy.byte_size();
 
@@ -412,9 +435,22 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
     }
 
     // find the first non-full octree-node that contains the point
-    // and add it to the node
-    // if the node now is full
-    // add it to the hierarchy page and write to file
+    // and add it to the node, if the node now is full
+    // add the node to the hierarchy page and write to file
+    //
+    // this is flawed for non-random ordered iterators
+    // as the levels will not contain a representative sample
+    // of the entire point cloud
+    //
+    // should probably add a reshuffle function which is called upon closing
+    // which selects a random point and puts it in a other (allowed) node
+    // then takes a random point from that node and puts it in a random node
+    // and does that for N iterations (N = num_points f.ex)
+    // as well as merging tiny leaf nodes with its parent
+    //
+    // or make the add function probibalistic, but this would probably require
+    // to know the number of points to be written upfront to balance the probability
+    // and that does not lend itself very well to the possibility of adding many iterators
     fn add_point(&mut self, point: las::Point) -> crate::Result<()> {
         self.header.add_point(&point);
 
@@ -457,13 +493,13 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
                 for child in node.children.iter_mut() {
                     nodes_to_check.push(child);
                 }
-                continue;
-            }
-            node_key = Some(node.entry.key.clone());
-            node.entry.point_count += 1;
+            } else {
+                node_key = Some(node.entry.key.clone());
+                node.entry.point_count += 1;
 
-            write_chunk = node.is_full(self.max_node_size);
-            break;
+                write_chunk = node.is_full(self.max_node_size);
+                break;
+            }
         }
         if node_key.is_none() {
             return Err(crate::Error::PointNotAddedToAnyNode);
@@ -505,6 +541,7 @@ impl<W: Write + Seek> Drop for CopcWriter<'_, W> {
     }
 }
 
+#[inline]
 fn bounds_contains_point(b: &las::Bounds, p: &las::Point) -> bool {
     !(b.max.x < p.x
         || b.max.y < p.y

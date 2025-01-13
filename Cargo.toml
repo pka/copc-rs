@@ -1,10 +1,10 @@
 [package]
 name = "copc-rs"
 version = "1.0.0"
-authors = ["Pirmin Kalberer <pka@sourcepole.ch>", "Øyvind Hjermstad, @oyhj1801"]
+authors = ["Pirmin Kalberer <pka@sourcepole.ch>", "Øyvind Hjermstad @oyhj1801"]
 edition = "2021"
 
-description = "Cloud Optimized Point Cloud (COPC) reader."
+description = "Cloud Optimized Point Cloud (COPC) reader and writer."
 homepage = "https://github.com/pka/copc-rs"
 repository = "https://github.com/pka/copc-rs"
 readme = "README.md"
