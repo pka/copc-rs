@@ -29,7 +29,7 @@ pub struct CopcInfo {
 
 impl CopcInfo {
     /// Reads COPC VLR data from a `Read`.
-    pub fn read_from<R: Read>(mut read: R) -> crate::Result<Self> {
+    pub(crate) fn read_from<R: Read>(mut read: R) -> crate::Result<Self> {
         Ok(CopcInfo {
             center: Vector {
                 x: read.read_f64::<LittleEndian>()?,
@@ -47,7 +47,7 @@ impl CopcInfo {
     }
 
     /// Convert COPC VLR data to a Vlr, size of VLR is 160bytes + header
-    pub fn into_vlr(self) -> crate::Result<Vlr> {
+    pub(crate) fn into_vlr(self) -> crate::Result<Vlr> {
         let mut buffer = Cursor::new([0_u8; 160]);
 
         buffer.write_f64::<LittleEndian>(self.center.x)?;
@@ -97,7 +97,7 @@ impl Default for VoxelKey {
 
 impl VoxelKey {
     /// Reads VoxelKey from a `Read`.
-    pub fn read_from<R: Read>(read: &mut R) -> crate::Result<Self> {
+    pub(crate) fn read_from<R: Read>(read: &mut R) -> crate::Result<Self> {
         Ok(VoxelKey {
             level: read.read_i32::<LittleEndian>()?,
             x: read.read_i32::<LittleEndian>()?,
@@ -107,7 +107,7 @@ impl VoxelKey {
     }
 
     /// Writes VoxelKey to a `Write`.
-    pub fn write_to<W: Write>(self, write: &mut W) -> crate::Result<()> {
+    pub(crate) fn write_to<W: Write>(self, write: &mut W) -> crate::Result<()> {
         write.write_i32::<LittleEndian>(self.level)?;
         write.write_i32::<LittleEndian>(self.x)?;
         write.write_i32::<LittleEndian>(self.y)?;
@@ -116,7 +116,7 @@ impl VoxelKey {
         Ok(())
     }
 
-    pub fn child(&self, dir: i32) -> VoxelKey {
+    pub(crate) fn child(&self, dir: i32) -> VoxelKey {
         VoxelKey {
             level: self.level + 1,
             x: (self.x << 1) | (dir & 0x1),
@@ -124,10 +124,10 @@ impl VoxelKey {
             z: (self.z << 1) | ((dir >> 2) & 0x1),
         }
     }
-    pub fn children(&self) -> Vec<VoxelKey> {
+    pub(crate) fn children(&self) -> Vec<VoxelKey> {
         (0..8).map(|i| self.child(i)).collect()
     }
-    pub fn bounds(&self, root_bounds: &Bounds) -> Bounds {
+    pub(crate) fn bounds(&self, root_bounds: &Bounds) -> Bounds {
         // In an octree every cell is a cube
         let side_size =
             (root_bounds.max.x - root_bounds.min.x) / 2_u32.pow(self.level as u32) as f64;
@@ -173,7 +173,7 @@ pub struct Entry {
 
 impl Entry {
     /// Reads hierarchy entry from a `Read`.
-    pub fn read_from<R: Read>(read: &mut R) -> crate::Result<Self> {
+    pub(crate) fn read_from<R: Read>(read: &mut R) -> crate::Result<Self> {
         Ok(Entry {
             key: VoxelKey::read_from(read)?,
             offset: read.read_u64::<LittleEndian>()?,
@@ -183,7 +183,7 @@ impl Entry {
     }
 
     /// Writes a hierarchy entry to a `Write`
-    pub fn write_to<W: Write>(self, write: &mut W) -> crate::Result<()> {
+    pub(crate) fn write_to<W: Write>(self, write: &mut W) -> crate::Result<()> {
         self.key.write_to(write)?;
         write.write_u64::<LittleEndian>(self.offset)?;
         write.write_i32::<LittleEndian>(self.byte_size)?;

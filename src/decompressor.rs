@@ -3,7 +3,7 @@ use laz::record::{LayeredPointRecordDecompressor, RecordDecompressor};
 use std::io::{Read, Seek, SeekFrom};
 
 /// LasZip decompressor.
-pub struct CopcDecompressor<'a, R: Read + Seek> {
+pub(crate) struct CopcDecompressor<'a, R: Read + Seek> {
     start: u64,
     vlr: &'a LazVlr,
     record_decompressor: LayeredPointRecordDecompressor<'a, R>,
@@ -14,7 +14,7 @@ pub struct CopcDecompressor<'a, R: Read + Seek> {
 impl<'a, R: Read + Seek> CopcDecompressor<'a, R> {
     /// Creates a new instance from a data source of compressed points
     /// and the LazVlr describing the compressed data
-    pub fn new(mut source: R, vlr: &'a LazVlr) -> laz::Result<Self> {
+    pub(crate) fn new(mut source: R, vlr: &'a LazVlr) -> laz::Result<Self> {
         // the read was seeked to the beginning of the las file in the read stream before calling new
         let start = source.stream_position()?;
         let mut record_decompressor = LayeredPointRecordDecompressor::new(source);
@@ -30,7 +30,7 @@ impl<'a, R: Read + Seek> CopcDecompressor<'a, R> {
     }
 
     #[inline]
-    pub fn source_seek(&mut self, offset: u64) -> laz::Result<()> {
+    pub(crate) fn source_seek(&mut self, offset: u64) -> laz::Result<()> {
         self.record_decompressor
             .get_mut()
             .seek(SeekFrom::Start(offset + self.start))?;
@@ -45,7 +45,7 @@ impl<'a, R: Read + Seek> CopcDecompressor<'a, R> {
     /// - The data is written in the buffer exactly as it would have been in a LAS File
     ///   in Little Endian order,
     #[inline]
-    pub fn decompress_one(&mut self, out: &mut [u8]) -> laz::Result<()> {
+    pub(crate) fn decompress_one(&mut self, out: &mut [u8]) -> laz::Result<()> {
         self.record_decompressor
             .decompress_next(out)
             .map_err(laz::errors::LasZipError::IoError)

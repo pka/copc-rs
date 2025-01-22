@@ -4,7 +4,7 @@ use laz::record::{LayeredPointRecordCompressor, RecordCompressor};
 
 use std::io::{Seek, SeekFrom, Write};
 
-pub struct CopcCompressor<'a, W: Write + Seek + 'a> {
+pub(crate) struct CopcCompressor<'a, W: Write + Seek + 'a> {
     vlr: LazVlr,
     record_compressor: LayeredPointRecordCompressor<'a, W>,
     /// Position where LasZipCompressor started
@@ -19,7 +19,7 @@ pub struct CopcCompressor<'a, W: Write + Seek + 'a> {
 
 impl<'a, W: Write + Seek + 'a> CopcCompressor<'a, W> {
     /// Creates a compressor using the provided vlr.
-    pub fn new(write: W, vlr: LazVlr) -> crate::Result<Self> {
+    pub(crate) fn new(write: W, vlr: LazVlr) -> crate::Result<Self> {
         let mut record_compressor = LayeredPointRecordCompressor::new(write);
         record_compressor.set_fields_from(vlr.items())?;
         let stream = record_compressor.get_mut();
@@ -39,7 +39,7 @@ impl<'a, W: Write + Seek + 'a> CopcCompressor<'a, W> {
     }
 
     /// Compress a chunk
-    pub fn compress_chunk<Chunk: AsRef<[u8]>>(
+    pub(crate) fn compress_chunk<Chunk: AsRef<[u8]>>(
         &mut self,
         chunk: Chunk,
     ) -> std::io::Result<(ChunkTableEntry, u64)> {
@@ -72,7 +72,7 @@ impl<'a, W: Write + Seek + 'a> CopcCompressor<'a, W> {
     }
 
     /// Must be called when you have compressed all your points.
-    pub fn done(&mut self) -> std::io::Result<()> {
+    pub(crate) fn done(&mut self) -> std::io::Result<()> {
         self.record_compressor.done()?;
 
         // update the offset to the chunk table
@@ -85,7 +85,7 @@ impl<'a, W: Write + Seek + 'a> CopcCompressor<'a, W> {
         self.chunk_table.write_to(stream, &self.vlr)
     }
 
-    pub fn get_mut(&mut self) -> &mut W {
+    pub(crate) fn get_mut(&mut self) -> &mut W {
         self.record_compressor.get_mut()
     }
 }

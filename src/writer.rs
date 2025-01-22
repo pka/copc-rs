@@ -73,6 +73,7 @@ impl CopcWriter<'_, BufWriter<File>> {
     }
 }
 
+/// public API
 impl<W: Write + Seek> CopcWriter<'_, W> {
     /// Create a COPC file writer for the write- and seekable `write`
     /// configured with the provided [las::Header]
@@ -165,13 +166,11 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
                 UpgradePdrf::From3to7
             }
             0 | 2 => {
-                eprintln!("GPS time is mandatory");
                 return Err(las::Error::InvalidPointFormat(las::point::Format::new(
                     raw_head.point_data_record_format,
                 )?))?;
             }
             4..=5 | 9.. => {
-                eprintln!("Waveform data is not supported");
                 return Err(las::Error::InvalidPointFormat(las::point::Format::new(
                     raw_head.point_data_record_format,
                 )?))?;
@@ -304,10 +303,12 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
     /// the number of points is used for stochastically filling the nodes
     /// if `num_points` is < 1 a greedy filling strategy is used
     /// this should only be used if the passed iterator is randomly ordered
+    /// which most of the time not is the case
     /// if `num_points` is not equal to the actual number of points in the
     /// iterator all points will still be written but the point distribution
     /// in a node will not represent of the entire distribution over that node
-    /// i.e. only full resolution queries will look right
+    /// i.e. only full resolution queries will look right which means the point cloud
+    /// will look wierd in any viewer which utilizes the COPC information
     ///
     /// returns an `Err`([crate::Error::ClosedWriter]) if the writer has already been closed.
     ///
@@ -349,21 +350,34 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
         self.is_closed
     }
 
+    /// number of points in the largest node
+    pub fn max_node_size(&self) -> i32 {
+        self.max_node_size
+    }
+
+    /// number of points in the smallest node
+    pub fn min_node_size(&self) -> i32 {
+        self.min_node_size
+    }
+
     /// This writer's header, some fields are updated on closing of the writer
     pub fn header(&self) -> &Header {
         &self.header
     }
 
-    /// This writer's EPT Hierarchy, is updated on closing of the writer
+    /// This writer's EPT Hierarchy
     pub fn hierarchy_entries(&self) -> &HierarchyPage {
         &self.hierarchy
     }
 
-    /// This writer's COPC info, is updated on closing of the writer
+    /// This writer's COPC info
     pub fn copc_info(&self) -> &CopcInfo {
         &self.copc_info
     }
+}
 
+/// private functions
+impl<W: Write + Seek> CopcWriter<'_, W> {
     /// Greedy strategy for writing points
     fn write_greedy<D: IntoIterator<Item = las::Point>>(&mut self, data: D) -> crate::Result<()> {
         let mut invalid_points = Ok(());
@@ -424,7 +438,7 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
         invalid_points
     }
 
-    /// Close must be called after writing all points
+    /// Close is called after the last point is written
     fn close(&mut self) -> crate::Result<()> {
         if self.is_closed {
             return Err(crate::Error::ClosedWriter);
@@ -433,7 +447,7 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
             return Err(crate::Error::EmptyCopcFile);
         }
 
-        // write the unclosed chunks
+        // write the unclosed chunks, order does not matter
         for (key, chunk) in self.open_chunks.drain() {
             let inner = chunk.into_inner();
             if inner.is_empty() {
@@ -452,13 +466,12 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
 
         let start_of_first_evlr = self.compressor.get_mut().stream_position()?;
 
-        let raw_evlrs: Vec<las::Result<las::raw::Vlr>> = {
-            self.header
-                .evlrs()
-                .iter()
-                .map(|evlr| evlr.clone().into_raw(true))
-                .collect()
-        };
+        let raw_evlrs: Vec<las::Result<las::raw::Vlr>> = self
+            .header
+            .evlrs()
+            .iter()
+            .map(|evlr| evlr.clone().into_raw(true))
+            .collect();
 
         // write copc-evlr
         self.hierarchy
@@ -543,11 +556,15 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
         let mut nodes_to_check = vec![&mut self.root_node];
         while let Some(node) = nodes_to_check.pop() {
             if !bounds_contains_point(&node.bounds, &point) {
+                // the point does not belong to this subtree
                 continue;
             }
             if node.is_full(self.max_node_size) {
+                // the point belongs to the subtree, but this node is full
+                // need to push the node's children to the nodes_to_check stack
                 if node.children.is_empty() {
-                    // add children to the node
+                    // the node does not have any children
+                    // so lets add children to the node
                     let child_keys = node.entry.key.children();
                     for key in child_keys {
                         let child_bounds = key.bounds(&root_bounds);
@@ -563,13 +580,16 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
                         })
                     }
                 }
+                // push the children to the stack
                 for child in node.children.iter_mut() {
                     nodes_to_check.push(child);
                 }
             } else {
+                // we've found the first non-full node that contains the point
                 node_key = Some(node.entry.key.clone());
                 node.entry.point_count += 1;
 
+                // check if the node now is full
                 write_chunk = node.is_full(self.max_node_size);
                 break;
             }
