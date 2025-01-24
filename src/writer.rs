@@ -742,7 +742,7 @@ fn get_random_weighted_index(entries: &Vec<&mut Entry>) -> usize {
     let random = fastrand::f64();
     let mut chosen_index = weights.len() - 1;
 
-    for i in 0..weights.len() - 2 {
+    for i in 0..weights.len() - 1 {
         if (weights[i]..=weights[i + 1]).contains(&random) {
             chosen_index = i;
             break;
