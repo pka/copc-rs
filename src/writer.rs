@@ -338,7 +338,7 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
             self.write_greedy(data)
         } else {
             // stochastic filling strategy
-            self.write_stochastic(data, num_points)
+            self.write_stochastic(data, num_points as usize)
         };
 
         self.close()?;
@@ -407,13 +407,28 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
     fn write_stochastic<D: IntoIterator<Item = las::Point>>(
         &mut self,
         data: D,
-        num_points: i32,
+        num_points: usize,
     ) -> crate::Result<()> {
         let mut invalid_points = Ok(());
 
-        let mut written_points = 0;
+        // the number of expected levels in the copc hierarchy
+        // assuming that the lidar scans cover a way bigger horizontal span than vertical
+        // effectivly dividing every level into 4 instead of 8
+        // (removing this assumption would lead to a division by 3 instead of 2, and thus fewer expected levels)
+        //
+        // each level then holds 4^i * max_points_per_node points
+        //
+        // solve for l:
+        // num_points / sum_i=0^l 4^i = max_points_per_node
+        //
+        // sum_i=0^l 4^i = 1/3 (4^(l+1) - 1)
+        // =>
+        // l = (log_2( 3*num_points/max_points_per_node + 1) - 2)/2
+        let expected_levels =
+            ((((3 * num_points) as f64 / self.max_node_size as f64 + 1.).log2() - 2.) / 2.).ceil()
+                as usize;
 
-        for p in data.into_iter() {
+        for (i, p) in data.into_iter().enumerate() {
             if !p.matches(self.header.point_format()) {
                 invalid_points = Err(crate::Error::InvalidPoint(
                     crate::PointAddError::PointAttributesDoNotMatch(*self.header.point_format()),
@@ -429,11 +444,13 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
                 continue;
             }
 
-            self.add_point_stochastic(p, written_points, num_points)?;
-
-            // increment and clamp the number of written points
-            // so that the 0 <= written_points/num_points <= 1
-            written_points = num_points.min(written_points + 1);
+            // if the given num_points was smaller than the actual number of points
+            // and we have passed that number revert to the greedy strategy
+            if num_points <= i {
+                self.add_point_greedy(p)?;
+            } else {
+                self.add_point_stochastic(p, expected_levels)?;
+            }
         }
         invalid_points
     }
@@ -523,20 +540,6 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
     // find the first non-full octree-node that contains the point
     // and add it to the node, if the node now is full
     // add the node to the hierarchy page and write to file
-    //
-    // this is flawed for non-random ordered iterators
-    // as the levels will not contain a representative sample
-    // of the entire point cloud
-    //
-    // should probably add a reshuffle function which is called upon closing
-    // which selects a random point and puts it in a other (allowed) node
-    // then takes a random point from that node and puts it in a random node
-    // and does that for N iterations (N = num_points f.ex)
-    // as well as merging tiny leaf nodes with its parent
-    //
-    // or make the add function probibalistic, but this would probably require
-    // to know the number of points to be written upfront to balance the probability
-    // and that does not lend itself very well to the possibility of adding many iterators
     fn add_point_greedy(&mut self, point: las::Point) -> crate::Result<()> {
         self.header.add_point(&point);
 
@@ -628,11 +631,124 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
     fn add_point_stochastic(
         &mut self,
         point: las::Point,
-        written_points: i32,
-        expected_points: i32,
+        expected_levels: usize,
     ) -> crate::Result<()> {
+        // strategy: find the deepest node that contains this point
+        // choose at (weighted) random this node or one of its parents
+        // add point to that node
+        // write full nodes to file
+
+        let root_bounds = self.root_node.bounds;
+
+        let mut node_candidates = vec![];
+
+        // starting from the root walk thorugh the octree
+        let mut nodes_to_check = vec![&mut self.root_node];
+        while let Some(node) = nodes_to_check.pop() {
+            if !bounds_contains_point(&node.bounds, &point) {
+                // the point does not belong to this subtree
+                continue;
+            }
+
+            if node.children.is_empty() && node.entry.key.level < expected_levels as i32 {
+                let child_keys = node.entry.key.children();
+                for key in child_keys {
+                    let child_bounds = key.bounds(&root_bounds);
+                    node.children.push(OctreeNode {
+                        entry: Entry {
+                            key,
+                            offset: 0,
+                            byte_size: 0,
+                            point_count: 0,
+                        },
+                        bounds: child_bounds,
+                        children: Vec::with_capacity(8),
+                    })
+                }
+            }
+            if !node.is_full(self.max_node_size) {
+                node_candidates.push(&mut node.entry);
+            }
+            // push the children to the stack
+            for child in node.children.iter_mut() {
+                nodes_to_check.push(child);
+            }
+        }
+
+        if node_candidates.is_empty() {
+            // we need to add a new level, revert to greedy approach
+            return self.add_point_greedy(point);
+        }
+
+        // weight by the inverse of the area (should volume be used?) the nodes conver
+        let chosen_index = get_random_weighted_index(&node_candidates);
+
+        let chosen_entry = &mut node_candidates[chosen_index];
+
+        chosen_entry.point_count += 1;
+
+        let write_chunk = chosen_entry.point_count > self.max_node_size;
+
+        let node_key = chosen_entry.key.clone();
+
+        self.header.add_point(&point);
+
+        if point.gps_time.unwrap() < self.copc_info.gpstime_minimum {
+            self.copc_info.gpstime_minimum = point.gps_time.unwrap();
+        } else if point.gps_time.unwrap() > self.copc_info.gpstime_maximum {
+            self.copc_info.gpstime_maximum = point.gps_time.unwrap();
+        }
+
+        let raw_point = point.into_raw(self.header.transforms())?;
+
+        if !self.open_chunks.contains_key(&node_key) {
+            let mut val = Cursor::new(vec![]);
+            raw_point.write_to(&mut val, self.header.point_format())?;
+
+            self.open_chunks.insert(node_key.clone(), val);
+        } else {
+            let buffer = self.open_chunks.get_mut(&node_key).unwrap();
+            raw_point.write_to(buffer, self.header.point_format())?;
+        }
+
+        if write_chunk {
+            let chunk = self.open_chunks.remove(&node_key).unwrap();
+            let (chunk_table_entry, chunk_offset) =
+                self.compressor.compress_chunk(chunk.into_inner())?;
+            self.hierarchy.entries.push(Entry {
+                key: node_key,
+                offset: chunk_offset,
+                byte_size: chunk_table_entry.byte_count as i32,
+                point_count: chunk_table_entry.point_count as i32,
+            });
+        }
         Ok(())
     }
+}
+
+fn get_random_weighted_index(entries: &Vec<&mut Entry>) -> usize {
+    // calculate weights
+    let levels: Vec<i32> = entries.iter().map(|e| e.key.level).collect();
+    let zero_level = levels[0];
+    let areas: Vec<f64> = levels
+        .iter()
+        .map(|l| (0.25_f64).powi(l - zero_level))
+        .collect();
+    let inv_sum = areas.iter().fold(0., |acc, a| acc + 1. / a);
+
+    let weights: Vec<f64> = areas.iter().map(|a| (1. / a) / inv_sum).collect();
+
+    // get random index
+    let random = fastrand::f64();
+    let mut chosen_index = weights.len() - 1;
+
+    for i in 0..weights.len() - 2 {
+        if (weights[i]..=weights[i + 1]).contains(&random) {
+            chosen_index = i;
+            break;
+        }
+    }
+    chosen_index
 }
 
 impl<W: Write + Seek> Drop for CopcWriter<'_, W> {
