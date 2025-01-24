@@ -12,9 +12,19 @@ use std::path::Path;
 
 // enum for point data record format upgrades
 enum UpgradePdrf {
-    From1to6,
-    From3to7,
-    NoUpgrade,
+    From1to6,  // upgrades (1=>6)
+    From3to7,  // upgrades (3=>7)
+    NoUpgrade, // 6, 7 and 8
+}
+
+impl UpgradePdrf {
+    fn log_string(&self) -> &str {
+        match self {
+            UpgradePdrf::From1to6 => "Upgrading LAS PDRF from 1 to 6",
+            UpgradePdrf::From3to7 => "Upgrading LAS PDRF from 3 to 7",
+            UpgradePdrf::NoUpgrade => "COPC supports the given PDRF",
+        }
+    }
 }
 
 /// COPC file writer
@@ -93,6 +103,15 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
     /// `min_size` greater or equal to `max_size` after checking values < 1
     /// results in a [crate::Error::InvalidNodeSize] error
     ///
+    ///
+    /// This writer is strictly following the LAS 1.4 spec and the COPC spec
+    /// which means that any provided header not compatible with those will lead
+    /// to an Err
+    /// That being said, LAS 1.2 headers and PDRFs 1 and 3 are accepted and upgraded to
+    /// their matching LAS 1.4 versions
+    /// GeoTiff CRS VLR's are parsed and written to WKT CRS VLR's
+    /// A CRS VLR is __MANDATORY__ and without one
+    ///
     /// [from_path]: Self::from_path
     pub fn new(mut write: W, header: Header, min_size: i32, max_size: i32) -> crate::Result<Self> {
         let start = write.stream_position()?;
@@ -114,14 +133,18 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
         }
 
         if header.version() != las::Version::new(1, 4) {
-            eprintln!("Old Las version. Upgrading");
+            log::log!(log::Level::Info, "Old Las version. Upgrading");
         }
+
+        let mut has_wkt_vlr = false;
 
         // store the vlrs contained in the header for forwarding
         let mut forward_vlrs = Vec::with_capacity(header.vlrs().len());
         for vlr in header.vlrs() {
             match (vlr.user_id.to_lowercase().as_str(), vlr.record_id) {
                 // not forwarding these vlrs
+                ("lasf_projection", 2112) => has_wkt_vlr = true,
+                ("lasf_projection", 34735..=34737) => (), // geo-tiff crs
                 ("copc", 1 | 1000) => (),
                 ("laszip encoded", 22204) => (),
                 ("lasf_spec", 100..355 | 65535) => (), // wave form packet descriptors
@@ -135,12 +158,48 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
         for evlr in header.evlrs() {
             match (evlr.user_id.to_lowercase().as_str(), evlr.record_id) {
                 // not forwarding these vlrs
-                ("copc", 1 | 1000) => (),        // 1 should never be a evlr
-                ("laszip encoded", 22204) => (), // should never be a evlr
-                ("lasf_spec", 100..355 | 65535) => (), // waveform data packets
+                ("lasf_projection", 2112) => has_wkt_vlr = true,
+                ("lasf_projection", 34735..=34737) => (), // geo-tiff crs
+                ("copc", 1 | 1000) => (),                 // 1 should never be a evlr
+                ("laszip encoded", 22204) => (),          // should never be a evlr
+                ("lasf_spec", 100..355 | 65535) => (),    // waveform data packets
                 // forwarding all other evlrs
                 _ => forward_evlrs.push(evlr.clone()),
             }
+        }
+
+        // las version 1.4 says pdrf 6-10 must have a wkt crs
+        // copc is only valid for las 1.4 and says only pdrf 6-8 is supported
+        //
+        // which means that any geotiff crs must be converted to a wkt crs
+        //
+        // could just use header.has_wkt_vlr(), but so many las files are wrongly written
+        // so I don't trust it
+        if !has_wkt_vlr {
+            let epsg = las_crs::parse_las_crs(&header)?;
+            let wkt_data = match crs_definitions::from_code(epsg.0) {
+                Some(wkt) => wkt,
+                None => return Err(crate::Error::InvalidEPSGCode(epsg.0)),
+            }
+            .wkt
+            .as_bytes()
+            .to_owned();
+
+            let mut user_id = [0; 16];
+            for (i, c) in "LASF_Projection".as_bytes().iter().enumerate() {
+                user_id[i] = *c;
+            }
+
+            let crs_vlr = las::raw::Vlr {
+                reserved: 0,
+                user_id,
+                record_id: 2112,
+                record_length_after_header: las::raw::vlr::RecordLength::Vlr(wkt_data.len() as u16),
+                description: [0; 32],
+                data: wkt_data,
+            };
+
+            forward_vlrs.push(las::Vlr::new(crs_vlr));
         }
 
         // check bounds are normal
@@ -158,12 +217,16 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
         let pdrf = raw_head.point_data_record_format & 0b00111111;
         let upgrade_pdrf = match pdrf {
             1 => {
-                eprintln!("Old point data record format. Upgrading");
-                UpgradePdrf::From1to6
+                let upgrade = UpgradePdrf::From1to6;
+
+                log::log!(log::Level::Info, "{}", upgrade.log_string());
+                upgrade
             }
             3 => {
-                eprintln!("Old point data record format. Upgrading");
-                UpgradePdrf::From3to7
+                let upgrade = UpgradePdrf::From3to7;
+
+                log::log!(log::Level::Info, "{}", upgrade.log_string());
+                upgrade
             }
             0 | 2 => {
                 return Err(las::Error::InvalidPointFormat(las::point::Format::new(
@@ -185,11 +248,12 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
             UpgradePdrf::From1to6 => 5,
             UpgradePdrf::From3to7 => 4,
         };
-        raw_head.point_data_record_format |= 0b10000000; // make sure the compress bits are set
+        raw_head.point_data_record_format |= 0b11000000; // make sure the compress bits are set
         raw_head.point_data_record_length += match upgrade_pdrf {
             UpgradePdrf::NoUpgrade => 0,
             _ => 2,
         };
+        raw_head.global_encoding |= 0b10000; // make sure wkt crs bit is set
         raw_head.number_of_point_records = 0;
         raw_head.number_of_points_by_return = [0; 5];
         raw_head.large_file = None;

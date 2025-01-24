@@ -44,7 +44,7 @@ fn main() {
     let mut las_reader = Reader::from_path("./lidar.las").unwrap();
 
     let header = las_reader.header().clone();
-    let num_points = header.number_of_points();
+    let num_points = header.number_of_points() as i32;
 
     let mut copc_writer = CopcWriter::from_path("./lidar.copc.laz", header, -1, -1).unwrap();
 

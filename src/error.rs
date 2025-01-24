@@ -65,6 +65,14 @@ pub enum Error {
     /// If a copc writer is created with invalid max or min node cound bounds
     #[error("the set min or max sizes for point in node is invalid")]
     InvalidNodeSize,
+
+    /// [las_crs::CrsError]
+    #[error(transparent)]
+    InvalidCrs(#[from] las_crs::CrsError),
+
+    /// Unsupported epsg
+    #[error("the found epsg-code is not defined in the crs-definitions library")]
+    InvalidEPSGCode(u16),
 }
 
 /// crate specific Error enum related to adding points to the writer
