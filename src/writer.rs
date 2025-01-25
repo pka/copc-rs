@@ -744,7 +744,7 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
             return self.add_point_greedy(point);
         }
 
-        // weight by the inverse of the area (should volume be used?) the nodes conver
+        // weighted by the inverse of the area (should volume be used?) the nodes cover
         let chosen_index = get_random_weighted_index(&node_candidates);
 
         let chosen_entry = &mut node_candidates[chosen_index];
@@ -794,10 +794,13 @@ fn get_random_weighted_index(entries: &Vec<&mut Entry>) -> usize {
     // calculate weights
     let levels: Vec<i32> = entries.iter().map(|e| e.key.level).collect();
     let zero_level = levels[0];
+
+    // for each level down the side lengths are halved i.e area is a quarter
     let areas: Vec<f64> = levels
         .iter()
         .map(|l| (0.25_f64).powi(l - zero_level))
         .collect();
+    // total inv area
     let inv_sum = areas.iter().fold(0., |acc, a| acc + 1. / a);
 
     let weights: Vec<f64> = areas.iter().map(|a| (1. / a) / inv_sum).collect();
