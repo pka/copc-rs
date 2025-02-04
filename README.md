@@ -1,3 +1,5 @@
+### Writing is still a WIP
+
 # copc-rs
 
 [![crates.io version](https://img.shields.io/crates/v/copc-rs.svg)](https://crates.io/crates/copc-rs)
