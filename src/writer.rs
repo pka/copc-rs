@@ -142,8 +142,11 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
         let mut forward_vlrs = Vec::with_capacity(header.vlrs().len());
         for vlr in header.vlrs() {
             match (vlr.user_id.to_lowercase().as_str(), vlr.record_id) {
+                ("lasf_projection", 2112) => {
+                    has_wkt_vlr = true;
+                    forward_vlrs.push(vlr.clone());
+                }
                 // not forwarding these vlrs
-                ("lasf_projection", 2112) => has_wkt_vlr = true,
                 ("lasf_projection", 34735..=34737) => (), // geo-tiff crs
                 ("copc", 1 | 1000) => (),
                 ("laszip encoded", 22204) => (),
@@ -157,8 +160,11 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
         let mut forward_evlrs = Vec::with_capacity(header.evlrs().len());
         for evlr in header.evlrs() {
             match (evlr.user_id.to_lowercase().as_str(), evlr.record_id) {
+                ("lasf_projection", 2112) => {
+                    has_wkt_vlr = true;
+                    forward_evlrs.push(evlr.clone());
+                }
                 // not forwarding these vlrs
-                ("lasf_projection", 2112) => has_wkt_vlr = true,
                 ("lasf_projection", 34735..=34737) => (), // geo-tiff crs
                 ("copc", 1 | 1000) => (),                 // 1 should never be a evlr
                 ("laszip encoded", 22204) => (),          // should never be a evlr
