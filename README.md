@@ -1,6 +1,7 @@
 ## Writing is still a WIP
-Writing of the octree structure works, so spatial queries on full resolution is good.
-BUT the resulting levels does not yet contain a similar point distribution as the whole cloud so results from resolution queries are wrong.
+Writing of the octree structure works, so spatial queries in full resolution on copc-rs written files are good.
+BUT the octree levels does not yet contain a similar point distribution as the whole cloud so results from resolution queries on copc-rs written files are wrong.
+This means the written files will look bad in viewers. I will look into it when I find time, for now I only need full resolution spatial queries anyway.
 
 # copc-rs
 
