@@ -1,4 +1,6 @@
-### Writing is still a WIP
+## Writing is still a WIP
+Writing of the octree structure works, so spatial queries on full resolution is good.
+BUT the resulting levels does not yet contain a similar point distribution as the whole cloud so results from resolution queries are wrong.
 
 # copc-rs
 
@@ -6,6 +8,7 @@
 [![docs.rs docs](https://docs.rs/copc-rs/badge.svg)](https://docs.rs/copc-rs)
 
 copc-rs is a rust library for reading and writing Cloud Optimized Point Cloud ([COPC](https://copc.io/)) data.
+It utilizes the las and laz crates heavily and tries to offer a similiar API to las.
 
 ## Usage examples
 
@@ -47,10 +50,9 @@ fn main() {
 
     let header = las_reader.header().clone();
     let num_points = header.number_of_points() as i32;
+    let points = las_reader.points().filter_map(las::Result::ok);
 
     let mut copc_writer = CopcWriter::from_path("./lidar.copc.laz", header, -1, -1).unwrap();
-
-    let points = las_reader.points().filter_map(las::Result::ok);
 
     copc_writer.write(points, num_points).unwrap();
 
