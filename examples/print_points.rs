@@ -1,13 +1,10 @@
 use copc_rs::{BoundsSelection, CopcReader, LodSelection};
 use std::env;
-use std::fs::File;
-use std::io::BufReader;
 
-fn main() -> laz::Result<()> {
+fn main() -> copc_rs::Result<()> {
     let lazfn = env::args().nth(1).expect("COPC file required");
 
-    let laz_file = BufReader::new(File::open(&lazfn)?);
-    let mut copc_reader = CopcReader::open(laz_file)?;
+    let mut copc_reader = CopcReader::from_path(&lazfn)?;
     for (i, point) in copc_reader
         .points(LodSelection::Level(0), BoundsSelection::All)?
         .enumerate()
