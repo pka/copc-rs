@@ -1,12 +1,3 @@
-## Writing is still a WIP
-Writing of the octree structure seem to work, so spatial queries in full resolution on copc-rs written files should be good.
-BUT the octree levels does not yet contain a similar point distribution as the whole cloud so results from resolution queries on copc-rs written files are wrong.
-This means the written files will look bad in viewers.
-
-
-I will look into it when I find time, for now I only need full resolution spatial queries in my current project anyway.
--oyhj1801
-
 # copc-rs
 
 [![crates.io version](https://img.shields.io/crates/v/copc-rs.svg)](https://crates.io/crates/copc-rs)
@@ -17,7 +8,16 @@ It utilizes the las and laz crates heavily and tries to offer a similiar API to 
 
 ## Usage examples
 
-### reader
+### Reader
+
+```rust
+let mut copc_reader = CopcReader::from_path("autzen-classified.copc.laz")?;
+for point in copc_reader.points(LodSelection::Level(0), BoundsSelection::All)?.take(5) {
+    println!("Point coordinates: ({}, {}, {})", point.x, point.y, point.z);
+}
+```
+
+Full example with bounds selection:
 ```rust
 use copc_rs::{Bounds, BoundsSelection, CopcReader, LodSelection, Vector};
 
@@ -45,7 +45,14 @@ fn main() {
     }
 }
 ```
-### writer
+
+Run an example:
+```
+cargo run --example copc_http
+```
+
+### Writer [[*]](#writing-is-still-a-wip)
+
 ```rust
 use copc_rs::CopcWriter;
 use las::Reader;
@@ -65,5 +72,17 @@ fn main() {
 }
 ```
 
+## Writing is still a WIP
+
+Writing of the octree structure seem to work, so spatial queries in full resolution on copc-rs written files should be good.
+BUT the octree levels does not yet contain a similar point distribution as the whole cloud so results from resolution queries on copc-rs written files are wrong.
+This means the written files will look bad in viewers.
+
+
+I will look into it when I find time, for now I only need full resolution spatial queries in my current project anyway.
+
+-oyhj1801
+
 ## Credits
+
 This library depends heavily on the work of Thomas Montaigu (@tmontaigu) and Pete Gadomski (@gadomski), the authors of the laz and las crates.
