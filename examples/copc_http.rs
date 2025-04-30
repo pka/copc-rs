@@ -1,5 +1,5 @@
 use copc_rs::{BoundsSelection, CopcReader, LodSelection};
-use http_range_client::HttpReader;
+use http_range_client::UreqHttpReader as HttpReader;
 
 fn main() -> copc_rs::Result<()> {
     env_logger::init();

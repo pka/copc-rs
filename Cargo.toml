@@ -15,7 +15,7 @@ keywords = ["lidar", "pointcloud", "copc", "las", "laz", "geo"]
 byteorder = "1.4.3"
 fastrand = "2.3.0"
 las-crs = { git = "https://github.com/oyhj1801/las-crs" }
-las = {version = "0.9.2", features = ["laz"]}
+las = { version = "0.9.2", features = ["laz"] }
 laz = "0.9.2"
 log = "0.4.25"
 thiserror = "2.0.6"
@@ -23,4 +23,6 @@ crs-definitions = "0.3.0"
 
 [dev-dependencies]
 env_logger = "0.11.8"
-http-range-client = "0.9.0" # default-features = false, features = ["ureq-sync"]
+http-range-client = { version = "0.9.0", default-features = false, features = [
+    "ureq-sync",
+] }
