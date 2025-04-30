@@ -354,7 +354,7 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
         Ok(CopcWriter {
             is_closed: false,
             start,
-            compressor: CopcCompressor::new(write, header.laz_vlr().unwrap())?,
+            compressor: CopcCompressor::new(write, header.laz_vlr()?)?,
             header,
             hierarchy: HierarchyPage { entries: vec![] },
             min_node_size,
@@ -667,10 +667,9 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
                 break;
             }
         }
-        if node_key.is_none() {
+        let Some(node_key) = node_key else {
             return Err(crate::Error::PointNotAddedToAnyNode);
-        }
-        let node_key = node_key.unwrap();
+        };
 
         let raw_point = point.into_raw(self.header.transforms())?;
 

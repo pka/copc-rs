@@ -261,14 +261,14 @@ impl<R: Read + Seek> CopcReader<R> {
             BoundsSelection::All => None,
             BoundsSelection::Within(bounds) => Some(RawBounds {
                 min: Vector {
-                    x: transforms.x.inverse(bounds.min.x).unwrap(),
-                    y: transforms.y.inverse(bounds.min.y).unwrap(),
-                    z: transforms.z.inverse(bounds.min.z).unwrap(),
+                    x: transforms.x.inverse(bounds.min.x)?,
+                    y: transforms.y.inverse(bounds.min.y)?,
+                    z: transforms.z.inverse(bounds.min.z)?,
                 },
                 max: Vector {
-                    x: transforms.x.inverse(bounds.max.x).unwrap(),
-                    y: transforms.y.inverse(bounds.max.y).unwrap(),
-                    z: transforms.z.inverse(bounds.max.z).unwrap(),
+                    x: transforms.x.inverse(bounds.max.x)?,
+                    y: transforms.y.inverse(bounds.max.y)?,
+                    z: transforms.z.inverse(bounds.max.z)?,
                 },
             }),
         };
@@ -333,7 +333,7 @@ fn bounds_intersect(a: &Bounds, b: &Bounds) -> bool {
 ///
 /// level: The level of detail (LOD).
 ///
-/// If absent, all LOD are going to be considered   
+/// If absent, all LOD are going to be considered
 pub enum LodSelection {
     /// Full resolution (all LODs)
     All,
