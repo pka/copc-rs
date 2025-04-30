@@ -10,6 +10,7 @@ repository = "https://github.com/pka/copc-rs"
 readme = "README.md"
 license = "MIT/Apache-2.0"
 keywords = ["lidar", "pointcloud", "copc", "las", "laz", "geo"]
+categories = ["science::geo", "rendering::data-formats"]
 
 [dependencies]
 byteorder = "1.4.3"
