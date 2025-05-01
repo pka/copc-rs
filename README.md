@@ -81,7 +81,7 @@ This means the written files will look bad in viewers.
 
 I will look into it when I find time, for now I only need full resolution spatial queries in my current project anyway.
 
--oyhj1801
+-yvind
 
 ## Credits
 
