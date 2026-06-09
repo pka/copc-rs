@@ -577,7 +577,7 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
             .get_mut()
             .seek(SeekFrom::Start(self.start))?;
         self.header.clone().into_raw().and_then(|mut raw_header| {
-            if let Some(mut e) = raw_header.evlr {
+            if let Some(e) = &mut raw_header.evlr {
                 e.start_of_first_evlr = start_of_first_evlr;
                 e.number_of_evlrs += 1;
             } else {
