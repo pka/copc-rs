@@ -828,10 +828,12 @@ fn get_random_weighted_index(entries: &Vec<&mut Entry>) -> usize {
 impl<W: Write + Seek> Drop for CopcWriter<'_, W> {
     fn drop(&mut self) {
         if !self.is_closed {
-            // can only happen if the writer is created but no points is written
-            // or something goes wrong while writing
-            self.close()
-                .expect("Error when dropping the writer. No points written.");
+            // A Drop impl must never panic. This runs when a writer is created but
+            // never written, or when a write errored before close() set is_closed --
+            // and a panic here while another panic is unwinding aborts the process.
+            // Best-effort close; callers who need to observe close errors should keep
+            // the writer and finish the write explicitly rather than rely on Drop.
+            let _ = self.close();
         }
     }
 }
