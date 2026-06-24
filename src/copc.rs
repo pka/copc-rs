@@ -1,9 +1,15 @@
 //! COPC VLR.
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use las::{Bounds, Vector, Vlr};
+#[cfg(feature = "writer")]
+use byteorder::WriteBytesExt;
+use byteorder::{LittleEndian, ReadBytesExt};
+#[cfg(feature = "writer")]
+use las::Vlr;
+use las::{Bounds, Vector};
 use std::hash::Hash;
-use std::io::{Cursor, Read, Write};
+use std::io::Read;
+#[cfg(feature = "writer")]
+use std::io::{Cursor, Write};
 
 /// COPC Info VLR data.
 #[derive(Clone, Debug, Default)]
@@ -47,6 +53,7 @@ impl CopcInfo {
     }
 
     /// Convert COPC VLR data to a Vlr, size of VLR is 160bytes + header
+    #[cfg(feature = "writer")]
     pub(crate) fn into_vlr(self) -> crate::Result<Vlr> {
         let mut buffer = Cursor::new([0_u8; 160]);
 
@@ -107,6 +114,7 @@ impl VoxelKey {
     }
 
     /// Writes VoxelKey to a `Write`.
+    #[cfg(feature = "writer")]
     pub(crate) fn write_to<W: Write>(self, write: &mut W) -> crate::Result<()> {
         write.write_i32::<LittleEndian>(self.level)?;
         write.write_i32::<LittleEndian>(self.x)?;
@@ -183,6 +191,7 @@ impl Entry {
     }
 
     /// Writes a hierarchy entry to a `Write`
+    #[cfg(feature = "writer")]
     pub(crate) fn write_to<W: Write>(self, write: &mut W) -> crate::Result<()> {
         self.key.write_to(write)?;
         write.write_u64::<LittleEndian>(self.offset)?;
@@ -218,6 +227,7 @@ impl HierarchyPage {
     /// Writes a hierarchy page to a `Write`
     ///
     /// This implementation of COPC writer writes all ept entries to a single page
+    #[cfg(feature = "writer")]
     pub(crate) fn into_evlr(self) -> crate::Result<Vlr> {
         // page size in bytes is the number of entries times 32 bytes per entry
         let mut buffer = Cursor::new(vec![0_u8; self.entries.len() * 32]);
@@ -235,6 +245,7 @@ impl HierarchyPage {
     }
 
     /// The number of bytes the data in the evlr is
+    #[cfg(feature = "writer")]
     pub fn byte_size(&self) -> u64 {
         // each entry is 32 bytes
         (self.entries.len() * 32) as u64
@@ -265,6 +276,7 @@ impl OctreeNode {
         }
     }
 
+    #[cfg(feature = "writer")]
     pub fn is_full(&self, max_size: i32) -> bool {
         self.entry.point_count >= max_size
     }

@@ -184,10 +184,16 @@ impl<W: Write + Seek> CopcWriter<'_, W> {
         //
         // ignores any vertical crs that might stored in geotiff
         if !has_wkt_vlr {
-            let epsg = las_crs::parse_las_crs(&header)?;
-            let wkt_data = match crs_definitions::from_code(epsg.horizontal) {
+            let epsg = header
+                .get_geotiff_crs()
+                .ok()
+                .flatten()
+                .and_then(|g| g.get_projected_crs_geo_key_value())
+                .ok_or(crate::Error::InvalidEPSGCode(0))?;
+
+            let wkt_data = match crs_definitions::from_code(epsg) {
                 Some(wkt) => wkt,
-                None => return Err(crate::Error::InvalidEPSGCode(epsg.horizontal)),
+                None => return Err(crate::Error::InvalidEPSGCode(epsg)),
             }
             .wkt
             .as_bytes()

@@ -7,10 +7,12 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Error, Debug)]
 pub enum Error {
     /// When trying to add points to a writer that already been closed
+    #[cfg(feature = "writer")]
     #[error("This writer has already been closed")]
     ClosedWriter,
 
     /// When trying to close an empty copc file
+    #[cfg(feature = "writer")]
     #[error("There are no points added to this file")]
     EmptyCopcFile,
 
@@ -23,6 +25,7 @@ pub enum Error {
     LasZipError(#[from] laz::LasZipError),
 
     /// The input file-path does not end in .copc.laz
+    #[cfg(feature = "writer")]
     #[error("The extension of the file to write does not match .copc.laz")]
     WrongCopcExtension,
 
@@ -47,35 +50,43 @@ pub enum Error {
     LasZipVlrNotFound,
 
     /// The provided iterator for writing points to copc did not contain any points
+    #[cfg(feature = "writer")]
     #[error("The provided iterator for writing points to copc did not contain any points")]
     EmptyIterator,
 
     /// Should not be possible
+    #[cfg(feature = "writer")]
     #[error("The point could not be added to any node in the octree")]
     PointNotAddedToAnyNode,
 
     /// If the bounds in the passed in header is invalid
+    #[cfg(feature = "writer")]
     #[error("the bounds in the passed in header is not normal: {:?}", .0)]
     InvalidBounds(las::Bounds),
 
     /// If a point fails to be added to the copc
+    #[cfg(feature = "writer")]
     #[error(transparent)]
     InvalidPoint(crate::PointAddError),
 
     /// If a copc writer is created with invalid max or min node cound bounds
+    #[cfg(feature = "writer")]
     #[error("the set min or max sizes for point in node is invalid")]
     InvalidNodeSize,
 
-    /// [las_crs::CrsError]
-    #[error(transparent)]
-    InvalidCrs(#[from] las_crs::CrsError),
-
     /// Unsupported epsg
+    #[cfg(feature = "writer")]
     #[error("the found epsg-code is not defined in the crs-definitions library")]
     InvalidEPSGCode(u16),
+
+    /// Unsupported epsg
+    #[cfg(feature = "writer")]
+    #[error("the lidar file have no defined crs")]
+    NoCRSDefined,
 }
 
 /// crate specific Error enum related to adding points to the writer
+#[cfg(feature = "writer")]
 #[derive(Error, Debug)]
 pub enum PointAddError {
     /// A point in the iterator passed to [write] did not

@@ -1,3 +1,5 @@
+#![cfg(feature = "writer")]
+
 //! Regression test: dropping a `CopcWriter` must never panic.
 //!
 //! Before the fix, `Drop` called `self.close().expect(...)`, so a writer that was
@@ -15,7 +17,10 @@ const WKT: &[u8] = b"GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",63
 fn header() -> las::Header {
     let mut b = Builder::from((1u8, 4u8));
     b.point_format = Format::new(6).unwrap();
-    let t = Transform { scale: 0.01, offset: 0.0 };
+    let t = Transform {
+        scale: 0.01,
+        offset: 0.0,
+    };
     b.transforms = Vector { x: t, y: t, z: t };
     let mut raw = b.into_header().unwrap().into_raw().unwrap();
     raw.min_x = 0.0;

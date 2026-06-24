@@ -250,7 +250,7 @@ impl<R: Read + Seek> CopcReader<R> {
         &mut self,
         levels: LodSelection,
         bounds: BoundsSelection,
-    ) -> crate::Result<PointIter<R>> {
+    ) -> crate::Result<PointIter<'_, R>> {
         let nodes = self.load_octree_for_query(levels, &bounds)?;
         let total_points_left = nodes.iter().map(|n| n.entry.point_count as usize).sum();
 

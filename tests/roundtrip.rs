@@ -1,3 +1,5 @@
+#![cfg(feature = "writer")]
+
 //! Regression test for the build against current `las`/`laz`, plus a basic
 //! write -> read round-trip through copc-rs's own writer and reader.
 //!
@@ -17,7 +19,10 @@ const WKT: &[u8] = b"GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",63
 fn header_with_bounds() -> las::Header {
     let mut b = Builder::from((1u8, 4u8));
     b.point_format = Format::new(6).unwrap();
-    let t = Transform { scale: 0.01, offset: 0.0 };
+    let t = Transform {
+        scale: 0.01,
+        offset: 0.0,
+    };
     b.transforms = Vector { x: t, y: t, z: t };
     // raw round-trip only to stamp non-degenerate bounds (Builder has no bounds field)
     let mut raw = b.into_header().unwrap().into_raw().unwrap();
@@ -43,7 +48,13 @@ fn writes_and_reads_back_all_points() {
     let pts: Vec<Point> = (0..500)
         .map(|i| {
             let f = (i % 100) as f64;
-            Point { x: f, y: f, z: f, gps_time: Some(1000.0 + i as f64), ..Default::default() }
+            Point {
+                x: f,
+                y: f,
+                z: f,
+                gps_time: Some(1000.0 + i as f64),
+                ..Default::default()
+            }
         })
         .collect();
     let n = pts.len();

@@ -1,3 +1,5 @@
+#![cfg(feature = "writer")]
+
 //! Regression test: an EVLR already present in the input header must not corrupt
 //! the written COPC's EVLR offset/count, which the reader uses to locate the EPT
 //! hierarchy. Before the fix, the header's `start_of_first_evlr`/`number_of_evlrs`
@@ -15,7 +17,10 @@ const WKT: &[u8] = b"GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",63
 fn header_with_extra_evlr() -> las::Header {
     let mut b = Builder::from((1u8, 4u8));
     b.point_format = Format::new(6).unwrap();
-    let t = Transform { scale: 0.01, offset: 0.0 };
+    let t = Transform {
+        scale: 0.01,
+        offset: 0.0,
+    };
     b.transforms = Vector { x: t, y: t, z: t };
     let mut raw = b.into_header().unwrap().into_raw().unwrap();
     raw.min_x = 0.0;
@@ -46,7 +51,13 @@ fn pre_existing_input_evlr_keeps_hierarchy_readable() {
     let pts: Vec<Point> = (0..2000)
         .map(|i| {
             let f = (i % 100) as f64;
-            Point { x: f, y: f, z: f, gps_time: Some(1000.0 + i as f64), ..Default::default() }
+            Point {
+                x: f,
+                y: f,
+                z: f,
+                gps_time: Some(1000.0 + i as f64),
+                ..Default::default()
+            }
         })
         .collect();
     let n = pts.len();
@@ -58,8 +69,12 @@ fn pre_existing_input_evlr_keeps_hierarchy_readable() {
     }
 
     buf.set_position(0);
-    let mut r = CopcReader::new(buf).expect("reader must open a COPC written from an EVLR-bearing header");
-    assert!(r.num_entries() > 0, "COPC hierarchy must be present/readable");
+    let mut r =
+        CopcReader::new(buf).expect("reader must open a COPC written from an EVLR-bearing header");
+    assert!(
+        r.num_entries() > 0,
+        "COPC hierarchy must be present/readable"
+    );
     let read = r
         .points(LodSelection::All, BoundsSelection::All)
         .unwrap()
