@@ -240,7 +240,12 @@ impl<R: Read + Seek> CopcReader<R> {
         }
 
         // Sort nodes by decending offsets for sequential reading
-        satisfying_nodes.sort_by(|a, b| b.entry.offset.partial_cmp(&a.entry.offset).unwrap());
+        satisfying_nodes.sort_by(|a, b| {
+            b.entry
+                .offset
+                .partial_cmp(&a.entry.offset)
+                .unwrap_or(Ordering::Equal)
+        });
 
         Ok(satisfying_nodes)
     }
@@ -372,7 +377,7 @@ pub struct PointIter<'a, R: Read + Seek> {
 }
 
 impl<R: Read + Seek> Iterator for PointIter<'_, R> {
-    type Item = las::point::Point;
+    type Item = las::Result<las::point::Point>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.total_points_left == 0 {
@@ -383,18 +388,29 @@ impl<R: Read + Seek> Iterator for PointIter<'_, R> {
             while self.node_points_left == 0 {
                 // get the next node with points
                 if let Some(node) = self.nodes.pop() {
-                    self.decompressor.source_seek(node.entry.offset).unwrap();
+                    match self.decompressor.source_seek(node.entry.offset) {
+                        Ok(_) => (),
+                        Err(e) => return Some(Err(e.into())),
+                    }
                     self.node_points_left = node.entry.point_count as usize;
                 } else {
                     return None;
                 }
             }
-            self.decompressor
+            match self
+                .decompressor
                 .decompress_one(self.point_buffer.as_mut_slice())
-                .unwrap();
-            let raw_point =
-                las::raw::Point::read_from(self.point_buffer.as_slice(), &self.point_format)
-                    .unwrap();
+            {
+                Ok(_) => (),
+                Err(e) => return Some(Err(e.into())),
+            }
+            let raw_point = match las::raw::Point::read_from(
+                self.point_buffer.as_slice(),
+                &self.point_format,
+            ) {
+                Ok(p) => p,
+                Err(e) => return Some(Err(e)),
+            };
             self.node_points_left -= 1;
             self.total_points_left -= 1;
             in_bounds = if let Some(bounds) = &self.bounds {
@@ -404,7 +420,7 @@ impl<R: Read + Seek> Iterator for PointIter<'_, R> {
             };
 
             if in_bounds {
-                return Some(las::point::Point::new(raw_point, &self.transforms));
+                return Some(Ok(las::point::Point::new(raw_point, &self.transforms)));
             }
         }
     }

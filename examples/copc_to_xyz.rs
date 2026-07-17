@@ -13,7 +13,10 @@ fn main() -> copc_rs::Result<()> {
     println!("Writing {:?}", &dest);
     let mut file = BufWriter::new(File::create(dest)?);
 
-    for point in copc_reader.points(LodSelection::Level(0), BoundsSelection::All)? {
+    for point in copc_reader
+        .points(LodSelection::Level(0), BoundsSelection::All)?
+        .filter_map(std::result::Result::ok)
+    {
         writeln!(&mut file, "{} {} {}", point.x, point.y, point.z)?;
     }
 

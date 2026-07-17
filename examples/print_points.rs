@@ -7,6 +7,7 @@ fn main() -> copc_rs::Result<()> {
     let mut copc_reader = CopcReader::from_path(&lazfn)?;
     for (i, point) in copc_reader
         .points(LodSelection::Level(0), BoundsSelection::All)?
+        .filter_map(std::result::Result::ok)
         .enumerate()
         .take(5)
     {

@@ -12,7 +12,7 @@ It utilizes the las and laz crates heavily and tries to offer a similiar API to 
 
 ```rust
 let mut copc_reader = CopcReader::from_path("autzen-classified.copc.laz")?;
-for point in copc_reader.points(LodSelection::Level(0), BoundsSelection::All)?.take(5) {
+for point in copc_reader.points(LodSelection::Level(0), BoundsSelection::All)?.filter_map(std::result::Result::ok).take(5) {
     println!("Point coordinates: ({}, {}, {})", point.x, point.y, point.z);
 }
 ```
@@ -40,6 +40,7 @@ fn main() {
     for point in copc_reader
         .points(LodSelection::Resolution(1.), BoundsSelection::Within(bounds))
         .unwrap()
+        .filter_map(std::result::Result::ok)
     {
         // do something with the points
     }

@@ -12,7 +12,10 @@ fn main() -> copc_rs::Result<()> {
     let mut copc_reader = CopcReader::new(http_reader)?;
 
     let mut max_z: f64 = 0.0;
-    for point in copc_reader.points(LodSelection::Level(0), BoundsSelection::All)? {
+    for point in copc_reader
+        .points(LodSelection::Level(0), BoundsSelection::All)?
+        .filter_map(std::result::Result::ok)
+    {
         max_z = max_z.max(point.z);
     }
     println!("Max Z Level 0: {max_z}");
