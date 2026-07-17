@@ -8,7 +8,7 @@ use laz::LazVlr;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
+use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
 
 /// COPC file reader
@@ -109,19 +109,19 @@ impl<R: Read + Seek> CopcReader<R> {
         // store all ept-hierarchy entries in a hashmap
         let hierarchy_entries = match ept_hierarchy {
             None => return Err(crate::Error::EptHierarchyVlrNotFound),
-            Some(vlr) => {
+            Some(_vlr) => {
                 let mut hierarchy_entries = HashMap::new();
 
-                let mut read_vlr = Cursor::new(vlr.data.as_slice());
+                read.seek(SeekFrom::Start(copc_info.root_hier_offset))?;
 
                 // read the root hierarchy page
                 let mut page =
-                    HierarchyPage::read_from(&mut read_vlr, copc_info.root_hier_size)?.entries;
+                    HierarchyPage::read_from(&mut read, copc_info.root_hier_size)?.entries;
 
                 while let Some(entry) = page.pop() {
                     if entry.point_count == -1 {
                         // read a new hierarchy page
-                        read.seek(SeekFrom::Start(entry.offset - copc_info.root_hier_offset))?;
+                        read.seek(SeekFrom::Start(entry.offset))?;
                         page.extend(
                             HierarchyPage::read_from(&mut read, entry.byte_size as u64)?.entries,
                         );
