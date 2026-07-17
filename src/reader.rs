@@ -112,7 +112,7 @@ impl<R: Read + Seek> CopcReader<R> {
             Some(_vlr) => {
                 let mut hierarchy_entries = HashMap::new();
 
-                read.seek(SeekFrom::Start(copc_info.root_hier_offset))?;
+                read.seek(SeekFrom::Start(copc_info.root_hier_offset + start))?;
 
                 // read the root hierarchy page
                 let mut page =
@@ -121,7 +121,7 @@ impl<R: Read + Seek> CopcReader<R> {
                 while let Some(entry) = page.pop() {
                     if entry.point_count == -1 {
                         // read a new hierarchy page
-                        read.seek(SeekFrom::Start(entry.offset))?;
+                        read.seek(SeekFrom::Start(entry.offset + start))?;
                         page.extend(
                             HierarchyPage::read_from(&mut read, entry.byte_size as u64)?.entries,
                         );
@@ -299,6 +299,7 @@ impl<R: Read + Seek> CopcReader<R> {
     }
 }
 
+#[derive(Debug)]
 struct RawBounds {
     min: Vector<i32>,
     max: Vector<i32>,
@@ -383,7 +384,6 @@ impl<R: Read + Seek> Iterator for PointIter<'_, R> {
         if self.total_points_left == 0 {
             return None;
         }
-        let mut in_bounds;
         loop {
             while self.node_points_left == 0 {
                 // get the next node with points
@@ -413,7 +413,7 @@ impl<R: Read + Seek> Iterator for PointIter<'_, R> {
             };
             self.node_points_left -= 1;
             self.total_points_left -= 1;
-            in_bounds = if let Some(bounds) = &self.bounds {
+            let in_bounds = if let Some(bounds) = &self.bounds {
                 bounds.contains_point(&raw_point)
             } else {
                 true
