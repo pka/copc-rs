@@ -15,7 +15,7 @@ categories = ["science::geo", "rendering::data-formats"]
 [dependencies]
 byteorder = "1.5"
 fastrand = { version = "2.4", optional = true }
-las = { version = "0.9", features = ["laz"] }
+las = { version = "0.10", features = ["laz"] }
 laz = "0.12"
 log = "0.4"
 thiserror = "2"
